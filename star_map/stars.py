@@ -1,76 +1,182 @@
-import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 
-pd.set_option('display.max_columns', None)
-pd.set_option('display.width', 1000)
+"""
+The ultimate goal of this file is to return two SVG files
+given three parameters (hemisphere, maximum apparent magnitude, constellation skyculture).
+It returns one SVG file for stars, and one SVG file for constellation lines.
+"""
 
-MAG_LIMIT = 5
-COLS = ['hip', 'con', 'proper', 'ra', 'dec', 'mag', 'ci']
-STAR_DATA_LOC = 'star_clock/star_map/data/star_databases/athyg_v24.csv'
+# CONSTANTS
 
-data = pd.read_csv(STAR_DATA_LOC)
-data = data[pd.notnull(data['hip'])]
-data['hip'] = data['hip'].astype(int)
-data = data[data['mag'] <= MAG_LIMIT]
-data = data[COLS]
-data['theta'] = np.radians(data['ra'] * 15)
-data['r'] = abs(data['dec'] / 90)
-north = data[data['dec'] >= 0]
-
-
-
-
-
-
+CONSTELLATIONS_LOC = 'star_map/data/sky_cultures/rey/constellationship.fab'
+CONSTELLATION_NAMES_LOC = 'star_map/data/sky_cultures/rey/constellation_names.eng.fab'
+MAG_LIMIT = 8 # 6.5 is naked eye mag limit
+STAR_DATA_LOC = 'star_map/data/star_databases/athyg_24_reduced_m10.csv'
+DATA_TYPES = {
+    'hip': 'Int64', # Nullable integer, for stars with no HIPPARCOS ID
+    'proper': str,
+    'ra': float,
+    'dec': float,
+    'mag': float,
+    'ci': float
+}
 
 
+# FUNCTIONS
+
+def get_star_data(star_data_loc, data_types):
+    return pd.read_csv(star_data_loc, usecols = data_types.keys(), dtype=data_types)
+
+def filter_star_data(star_data, mag_limit):
+    filtered_data = star_data.dropna(subset=['hip'])
+    filtered_data = filtered_data[filtered_data['mag'] <= mag_limit]
+    return filtered_data
+
+def get_stars_dict(star_data_loc, data_types, mag_limit):
+    star_df = pd.read_csv(star_data_loc, usecols=data_types.keys(), dtype=data_types)
+    filtered_star_df = star_df.dropna(subset=['hip'])
+    filtered_star_df = filtered_star_df[filtered_star_df['mag'] <= mag_limit]
+    stars_dict = {int(row['hip']): Star(int(row['hip']), row['proper'], row['ra'], row['dec'], row['mag'], row['ci'])
+                for row in filtered_star_df.to_dict('records')}
+    return stars_dict
+
+def load_constellation_names(filepath):
+    names_dict = {}
+    with open(filepath, 'r', encoding='utf-8') as file:
+        for line in file:
+            if line.strip().startswith('#'): # skip comments
+                continue
+            parts = line.strip().split('\t')
+            if len(parts) < 2: # skip malformed lines
+                continue
+            abbrv = parts[0].strip('.')
+            common_name = parts[1].strip('"')
+            latin_name = parts[2].strip('_(")').rstrip('")')
+            names_dict[abbrv] = (common_name, latin_name)
+    return names_dict
 
 
+# CLASSES
+
+class Star:
+    def __init__(self, hip, proper, ra, dec, mag, ci):
+        self.hip = hip
+        self.proper = proper
+        self.ra = ra
+        self.dec = dec
+        self.mag = mag
+        self.ci = ci
+
+    def __repr__(self):
+        return (
+            f"Star(hip={self.hip}, proper={self.proper!r}, "
+            f"ra={self.ra}, dec={self.dec}, mag={self.mag}, ci={self.ci})"
+        )
+
+    def __str__(self):
+        formatted_ra = f"{self.ra:.2f}°"
+        formatted_dec = f"{self.dec:+.2f}°"
+        star_info = f"{self.proper} (HIP {self.hip})" if self.proper else f"HIP {self.hip}"
+        return f"{star_info}: Mag {self.mag:.2f}, RA {formatted_ra}, Dec {formatted_dec}"
 
 
+class Constellation:
+    def __init__(self, abbrv, common_name, latin_name, seg_count, seg_list=None, sub_constellations=None):
+        self.abbrv = abbrv
+        self.common_name = common_name
+        self.latin_name = latin_name
+        self.seg_count = seg_count
+        self.seg_list = seg_list if seg_list is not None else []
+        self.sub_constellations = sub_constellations if sub_constellations is not None else []
+        self._unique_stars = None  # Initialize to None
 
+    def add_sub_constellation(self, sub_constellation):
+        self.sub_constellations.append(sub_constellation)
 
-
-
-
-# def plot_stereographic_projection(data, compress_factor=1):
-#     # Cartesian star coords
-#     x = data['r'] * np.cos(data['theta'])
-#     y = data['r'] * np.sin(data['theta'])
+    def get_unique_stars(self):
+        if self._unique_stars is None:  # Calculate only if needed
+            stars = [star for segment in self.seg_list for star in segment]
+            self._unique_stars = set(stars)
+        return self._unique_stars
     
-#     # Create the plot
-#     plt.figure(figsize=(8, 8))
-#     ax = plt.gca()
-#     ax.scatter(x, y, color='white', s=1)  # 's' controls the size of the points
-#     ax.set_facecolor('black')
+    def __str__(self):
+        unique_stars = self.get_unique_stars()
+        sub_constellation_names = ', '.join(sub.common_name for sub in self.sub_constellations)
+        return (
+            f"{self.common_name} ({self.abbrv}): Unique Stars: {len(unique_stars)}, "
+            f"Segments: {len(self.seg_list)}, "
+            f"Sub-Constellations: [{sub_constellation_names}]"
+        )
     
-#     # Label points if the 'proper' column has a name
-#     for i, txt in enumerate(data['proper']):
-#         if pd.notnull(txt):
-#             ax.annotate(txt, (x[i], y[i]), textcoords="offset points", xytext=(0,5), ha='center', color='white', fontsize=8)
-    
-#     # Add gridlines for specific declinations
-#     decs = [20, 40, 60, 80]  # Declination values for gridlines
-#     for dec in decs:
-#         dec_rad = np.radians(dec)
-#         r = np.sqrt(2 * np.arctan(np.cos(dec_rad))) * compress_factor
-#         circle = plt.Circle((0, 0), r, color='white', fill=False, linestyle='--', linewidth=0.5)
-#         ax.add_patch(circle)
-    
-#     ax.set_xlim(-np.sqrt(2)*compress_factor, np.sqrt(2)*compress_factor)
-#     ax.set_ylim(-np.sqrt(2)*compress_factor, np.sqrt(2)*compress_factor)
-#     ax.set_aspect('equal', adjustable='box')  # Keep the aspect ratio of the plot as a circle
-    
-#     plt.xticks([])
-#     plt.yticks([])  # Remove axis marks
-    
-#     plt.title('Stereographic Projection of Stars')
-#     plt.show()
+    def __repr__(self):
+        return (
+            f"Constellation(abbrv={self.abbrv!r}, common_name={self.common_name!r}, "
+            f"latin_name={self.latin_name!r}, seg_count={self.seg_count!r}, seg_list={self.seg_list!r}, "
+            f"sub_constellations={[sub.abbrv for sub in self.sub_constellations]!r})"
+        )
 
 
-# # Assuming 'filtered_data' is already loaded and contains the 'r' and 'theta' columns
-# data = pd.read_csv('star_clock/star_map/data/star_databases/athyg_v24.csv')
-# filtered_data = get_hemisphere_disk(data, 'north', 2.3, 5)
-# plot_stereographic_projection(filtered_data)
+class ConstellationParser:
+    def __init__(self, filepath, names_dict, stars_dict):
+        self.filepath = filepath
+        self.names_dict = names_dict
+        self.stars_dict = stars_dict
+
+    def parse(self):
+        constellations = []
+        current_main = None # current main const. for dealing with sub-constellations
+        with open(self.filepath, 'r') as file:
+            for line in file:
+                if line.startswith('#'): # skip comments
+                    continue
+                if not line.startswith('.'): # main constellation logic
+                    constellation = self.parse_line(line)
+                    if constellation:
+                        constellations.append(constellation)
+                        current_main = constellation
+                else: # Sub-constellation logic (e.g. ursa major paws)
+                    sub_constellation = self.parse_line(line)
+                    if sub_constellation and current_main:
+                        current_main.add_sub_constellation(sub_constellation)
+        return constellations
+    
+    def parse_line(self, line):
+        parts = line.strip().split()
+        if len(parts) < 3:
+            return None
+        abbrv = parts[0].strip('.')
+        seg_count = int(parts[1])
+        seg_list = [(self.stars_dict.get(int(hip1)), self.stars_dict.get(int(hip2))) for hip1, hip2 in zip(parts[2::2], parts[3::2])]
+        return Constellation(
+            abbrv = abbrv,
+            common_name = self.names_dict.get(abbrv)[0],
+            latin_name = self.names_dict.get(abbrv)[1],
+            seg_count = seg_count,
+            seg_list = seg_list,
+            sub_constellations = None
+        )
+
+
+if __name__ == '__main__':
+    names_dict = load_constellation_names(CONSTELLATION_NAMES_LOC)
+    stars_dict = get_stars_dict(STAR_DATA_LOC, DATA_TYPES, MAG_LIMIT)
+    parser = ConstellationParser(CONSTELLATIONS_LOC, names_dict, stars_dict)
+    constellations = parser.parse()
+    print(constellations[0])
+
+
+
+# data = data[pd.notnull(data['hip'])]
+# data['hip'] = data['hip'].astype(int)
+# data = data[data['mag'] <= MAG_LIMIT]
+# data = data[COLS]
+# data['theta'] = np.radians(data['ra'] * 15)
+# data['r'] = abs(data['dec'] / 90)
+# north = data[data['dec'] >= 0]
+
+
+
+
+
+
 
