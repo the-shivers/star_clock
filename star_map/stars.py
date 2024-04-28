@@ -1,4 +1,5 @@
 import pandas as pd
+import json
 
 """
 The ultimate goal of this file is to return two SVG files
@@ -8,9 +9,8 @@ It returns one SVG file for stars, and one SVG file for constellation lines.
 
 # CONSTANTS
 
-CONSTELLATIONS_LOC = 'star_map/data/sky_cultures/rey/constellationship.fab'
-CONSTELLATION_NAMES_LOC = 'star_map/data/sky_cultures/rey/constellation_names.eng.fab'
-MAG_LIMIT = 8 # 6.5 is naked eye mag limit
+CONSTELLATIONS_LOC = 'star_map/data/sky_cultures/western_rey.json'
+MAG_LIMIT = 9 # 6.5 is naked eye mag limit
 STAR_DATA_LOC = 'star_map/data/star_databases/athyg_24_reduced_m10.csv'
 DATA_TYPES = {
     'hip': 'Int64', # Nullable integer, for stars with no HIPPARCOS ID
@@ -40,21 +40,6 @@ def get_stars_dict(star_data_loc, data_types, mag_limit):
                 for row in filtered_star_df.to_dict('records')}
     return stars_dict
 
-def load_constellation_names(filepath):
-    names_dict = {}
-    with open(filepath, 'r', encoding='utf-8') as file:
-        for line in file:
-            if line.strip().startswith('#'): # skip comments
-                continue
-            parts = line.strip().split('\t')
-            if len(parts) < 2: # skip malformed lines
-                continue
-            abbrv = parts[0].strip('.')
-            common_name = parts[1].strip('"')
-            latin_name = parts[2].strip('_(")').rstrip('")')
-            names_dict[abbrv] = (common_name, latin_name)
-    return names_dict
-
 
 # CLASSES
 
@@ -69,8 +54,8 @@ class Star:
 
     def __repr__(self):
         return (
-            f"Star(hip={self.hip}, proper={self.proper!r}, "
-            f"ra={self.ra}, dec={self.dec}, mag={self.mag}, ci={self.ci})"
+            f"Star(hip={self.hip!r}, proper={self.proper!r}, "
+            f"ra={self.ra!r}, dec={self.dec!r}, mag={self.mag!r}, ci={self.ci!r})"
         )
 
     def __str__(self):
@@ -81,17 +66,13 @@ class Star:
 
 
 class Constellation:
-    def __init__(self, abbrv, common_name, latin_name, seg_count, seg_list=None, sub_constellations=None):
+    def __init__(self, abbrv, common_name, latin_name, seg_count, seg_list=None):
         self.abbrv = abbrv
         self.common_name = common_name
         self.latin_name = latin_name
         self.seg_count = seg_count
         self.seg_list = seg_list if seg_list is not None else []
-        self.sub_constellations = sub_constellations if sub_constellations is not None else []
-        self._unique_stars = None  # Initialize to None
-
-    def add_sub_constellation(self, sub_constellation):
-        self.sub_constellations.append(sub_constellation)
+        self._unique_stars = None
 
     def get_unique_stars(self):
         if self._unique_stars is None:  # Calculate only if needed
@@ -101,82 +82,73 @@ class Constellation:
     
     def __str__(self):
         unique_stars = self.get_unique_stars()
-        sub_constellation_names = ', '.join(sub.common_name for sub in self.sub_constellations)
         return (
             f"{self.common_name} ({self.abbrv}): Unique Stars: {len(unique_stars)}, "
-            f"Segments: {len(self.seg_list)}, "
-            f"Sub-Constellations: [{sub_constellation_names}]"
+            f"Segments: {len(self.seg_list)}"
         )
     
     def __repr__(self):
         return (
             f"Constellation(abbrv={self.abbrv!r}, common_name={self.common_name!r}, "
-            f"latin_name={self.latin_name!r}, seg_count={self.seg_count!r}, seg_list={self.seg_list!r}, "
-            f"sub_constellations={[sub.abbrv for sub in self.sub_constellations]!r})"
+            f"latin_name={self.latin_name!r}, seg_count={self.seg_count!r}, seg_list={self.seg_list!r}"
         )
 
-
+    
 class ConstellationParser:
-    def __init__(self, filepath, names_dict, stars_dict):
+    def __init__(self, filepath, stars_dict):
         self.filepath = filepath
-        self.names_dict = names_dict
         self.stars_dict = stars_dict
 
     def parse(self):
-        constellations = []
-        current_main = None # current main const. for dealing with sub-constellations
         with open(self.filepath, 'r') as file:
-            for line in file:
-                if line.startswith('#'): # skip comments
-                    continue
-                if not line.startswith('.'): # main constellation logic
-                    constellation = self.parse_line(line)
-                    if constellation:
-                        constellations.append(constellation)
-                        current_main = constellation
-                else: # Sub-constellation logic (e.g. ursa major paws)
-                    sub_constellation = self.parse_line(line)
-                    if sub_constellation and current_main:
-                        current_main.add_sub_constellation(sub_constellation)
+            data = json.load(file)['constellations']
+
+        constellations = []
+        for item in data:
+            abbrv = item['id'].split()[-1]
+            if len(abbrv) >= 4: # Indicates a subconstellation, e.g. ursa major paws
+                continue
+            common_name = item['common_name']['english']
+            latin_name = item['common_name'].get('native', None)
+            seg_list = []
+            for line in item['lines']:
+                seg_list.extend([(self.stars_dict.get(line[i]), self.stars_dict.get(line[i + 1]))
+                                 for i in range(len(line) - 1)])
+            seg_count = len(seg_list)
+            constellations.append(Constellation(abbrv, common_name, latin_name, seg_count, seg_list))
         return constellations
     
-    def parse_line(self, line):
-        parts = line.strip().split()
-        if len(parts) < 3:
-            return None
-        abbrv = parts[0].strip('.')
-        seg_count = int(parts[1])
-        seg_list = [(self.stars_dict.get(int(hip1)), self.stars_dict.get(int(hip2))) for hip1, hip2 in zip(parts[2::2], parts[3::2])]
-        return Constellation(
-            abbrv = abbrv,
-            common_name = self.names_dict.get(abbrv)[0],
-            latin_name = self.names_dict.get(abbrv)[1],
-            seg_count = seg_count,
-            seg_list = seg_list,
-            sub_constellations = None
-        )
+
+class Constellationship:
+    def __init__(self, constellations, name):
+        self.constellations = constellations
+        self.name = name
+        self._unique_stars = None
+
+    def get_unique_stars(self):
+        if self._unique_stars is None:  # Calculate only if needed
+            unique_stars = set()
+            for constellation in self.constellations:
+                unique_stars.update(constellation.get_unique_stars())
+            self._unique_stars = unique_stars
+        return self._unique_stars
+    
+    def get_dimmest_star(self):
+        unique_stars = self.get_unique_stars()
+        dimmest_star = None
+        min_mag = float('-26') # The sun, brightest apparent star.
+        for star in unique_stars:
+            print(star)
+            if star.mag > min_mag:
+                min_mag = star.mag
+                dimmest_star = star
+        return dimmest_star
 
 
 if __name__ == '__main__':
-    names_dict = load_constellation_names(CONSTELLATION_NAMES_LOC)
     stars_dict = get_stars_dict(STAR_DATA_LOC, DATA_TYPES, MAG_LIMIT)
-    parser = ConstellationParser(CONSTELLATIONS_LOC, names_dict, stars_dict)
+    parser = ConstellationParser(CONSTELLATIONS_LOC, stars_dict)
     constellations = parser.parse()
-    print(constellations[0])
-
-
-
-# data = data[pd.notnull(data['hip'])]
-# data['hip'] = data['hip'].astype(int)
-# data = data[data['mag'] <= MAG_LIMIT]
-# data = data[COLS]
-# data['theta'] = np.radians(data['ra'] * 15)
-# data['r'] = abs(data['dec'] / 90)
-# north = data[data['dec'] >= 0]
-
-
-
-
-
-
+    constellationship = Constellationship(constellations, 'rey')
+    print(constellationship.get_dimmest_star())
 
