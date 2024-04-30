@@ -146,10 +146,10 @@ if __name__ == '__main__':
     constellationship = Constellationship(constellations, 'iau')
     print(constellationship.get_dimmest_star())
 
-# TO DO:
-    # CONSTELLATION BORDERS
-    # PROJECTION
-    # MILKY WAY 
-    # DSOs
+# STATUS
+    # ALL DATA COLLECTED
+
+# TO DO
+    # SVG generation script.
     
 
