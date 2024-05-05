@@ -124,10 +124,14 @@ class SVGHemisphere:
         self.elements = {}
 
     # SVG-specific geometry helper functions
-    def get_northern_hemisphere_cartesian(self, ra, dec):
+    def get_hemisphere_cartesian(self, ra, dec):
         """Given RA and DEC of some stellar object, produces cartesian coordinates for the azimuthal equidistant projection."""
-        theta_radians = ra / 24 * np.pi * 2
-        hypotenuse = ((90 - dec) / self.dec_degrees) * self.star_circle_dia/2
+        if self.is_north:
+            theta_radians = ra / 24 * np.pi * 2
+            hypotenuse = ((90 - dec) / self.dec_degrees) * self.star_circle_dia/2
+        else:
+            theta_radians = 2 * np.pi - (ra / 24 * np.pi * 2)
+            hypotenuse = ((90 + dec) / self.dec_degrees) * self.star_circle_dia/2
         x = self.size / 2 + np.sin(theta_radians) * hypotenuse
         y = self.size/2 - np.cos(theta_radians) * hypotenuse
         return (x, y)
@@ -182,13 +186,13 @@ class SVGHemisphere:
             transformed_path = {'M': None, 'beziers': []}
             # Transform the 'M' starting point
             m_ra, m_dec = get_equirect_coords(path_data['M'][0], path_data['M'][1], x_dim=x_dim, y_dim=y_dim)
-            transformed_path['M'] = self.get_northern_hemisphere_cartesian(m_ra, m_dec)
+            transformed_path['M'] = self.get_hemisphere_cartesian(m_ra, m_dec)
             # Transform each bezier segment
             for bezier in path_data['beziers']:
                 transformed_bezier = []
                 for point in bezier:
                     ra, dec = get_equirect_coords(point[0], point[1], x_dim=x_dim, y_dim=y_dim)
-                    transformed_bezier.append(self.get_northern_hemisphere_cartesian(ra, dec))
+                    transformed_bezier.append(self.get_hemisphere_cartesian(ra, dec))
                 transformed_path['beziers'].append(transformed_bezier)
             transformed_paths.append(transformed_path)
         return transformed_paths
@@ -241,8 +245,8 @@ class SVGHemisphere:
     def add_constellation_lines(self, constellationship, truncation_amount=0.1, stroke_width=0.2):
         for constellation in constellationship.constellations: # constellation = [(star, star), (star, star), ...]
             for stars in constellation.seg_list: # stars = (star, star)
-                start = self.get_northern_hemisphere_cartesian(stars[0].ra, stars[0].dec)
-                end = self.get_northern_hemisphere_cartesian(stars[1].ra, stars[1].dec)
+                start = self.get_hemisphere_cartesian(stars[0].ra, stars[0].dec)
+                end = self.get_hemisphere_cartesian(stars[1].ra, stars[1].dec)
                 start, end = self.truncate_line(start, end, truncation_amount)
                 if self.is_point_inside_circle(start) and self.is_point_inside_circle(end): # Both inside
                     self.elements[f'{stars[0].hip}-{stars[1].hip}'] = self.drawing.add(
@@ -258,9 +262,13 @@ class SVGHemisphere:
 
     def add_stars(self, stars_dict, mag_limit, min_radius=0.5, max_radius=5, scale_type=1):
         for star in stars_dict.values():
-            if star.dec < 90 - self.dec_degrees or star.mag > mag_limit:
-                continue
-            x, y = self.get_northern_hemisphere_cartesian(star.ra, star.dec)
+            if self.is_north:
+                if star.dec < 90 - self.dec_degrees or star.mag > mag_limit:
+                    continue
+            else:
+                if star.dec > -90 + self.dec_degrees or star.mag > mag_limit:
+                    continue
+            x, y = self.get_hemisphere_cartesian(star.ra, star.dec)
             star_radius = mag_to_radius(star.mag, min_radius=min_radius, max_radius=max_radius, scale_type=scale_type, max_mag=mag_limit, min_mag=-1.46)
             self.create_star_gradient(star)
             self.elements[star.hip] = self.drawing.add(self.drawing.circle(center=(x, y), r=star_radius, fill=f'url(#{star.hip})'))
@@ -363,10 +371,18 @@ if __name__ == '__main__':
     constellationship = Constellationship(constellations, 'iau')
     
     # Drawing
-    svg_north = SVGHemisphere(size, full_circle_dia, star_circle_dia, dec_degrees, filename="star_map.svg", is_north=True)
-    svg_north.add_star_circle()
+    # svg_north = SVGHemisphere(size, full_circle_dia, star_circle_dia, dec_degrees, filename="star_map.svg", is_north=True)
+    # svg_north.add_star_circle()
+    # for file in svg_files:
+    #     svg_north.add_milky_way_svg(file, x_dim, y_dim)
+    # svg_north.add_constellation_lines(constellationship, truncation_amount=2.5, stroke_width=0.2)
+    # svg_north.add_stars(stars_dict, mag_limit=7.5, min_radius=0.1, max_radius=5, scale_type=1.5)
+    # svg_north.save_drawing()
+
+    svg_south = SVGHemisphere(size, full_circle_dia, star_circle_dia, dec_degrees, filename="star_map_s.svg", is_north=False)
+    svg_south.add_star_circle()
     for file in svg_files:
-        svg_north.add_milky_way_svg(file, x_dim, y_dim)
-    svg_north.add_constellation_lines(constellationship, truncation_amount=2.5, stroke_width=0.2)
-    svg_north.add_stars(stars_dict, mag_limit=6.5, min_radius=0.1, max_radius=5, scale_type=1.5)
-    svg_north.save_drawing()
+        svg_south.add_milky_way_svg(file, x_dim, y_dim)
+    svg_south.add_constellation_lines(constellationship, truncation_amount=2.5, stroke_width=0.2)
+    svg_south.add_stars(stars_dict, mag_limit=7.5, min_radius=0.1, max_radius=5, scale_type=1.5)
+    svg_south.save_drawing()
