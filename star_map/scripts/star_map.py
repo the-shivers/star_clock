@@ -6,6 +6,8 @@ It returns one SVG file for stars, and one SVG file for constellation lines.
 
 import pandas as pd
 import numpy as np
+import xml.etree.ElementTree as ET
+import re
 import svgwrite
 import json
 
@@ -111,7 +113,163 @@ class Constellationship:
                 dimmest_star = star
         return dimmest_star
 
+class SVGHemisphere:
+    def __init__(self, size, full_circle_dia, star_circle_dia, dec_degrees, filename="star_map.svg", is_north=True):
+        self.size = size
+        self.full_circle_dia = full_circle_dia
+        self.star_circle_dia = star_circle_dia
+        self.dec_degrees = dec_degrees
+        self.is_north = is_north
+        self.drawing = svgwrite.Drawing(filename=filename, size=(f"{size}px", f"{size}px"))
+        self.elements = {}
 
+    # SVG-specific geometry helper functions
+    def get_northern_hemisphere_cartesian(self, ra, dec):
+        """Given RA and DEC of some stellar object, produces cartesian coordinates for the azimuthal equidistant projection."""
+        theta_radians = ra / 24 * np.pi * 2
+        hypotenuse = ((90 - dec) / self.dec_degrees) * self.star_circle_dia/2
+        x = self.size / 2 + np.sin(theta_radians) * hypotenuse
+        y = self.size/2 - np.cos(theta_radians) * hypotenuse
+        return (x, y)
+    
+    def is_point_inside_circle(self, point):
+        x, y = point
+        x0, y0 = self.size/2, self.size/2
+        return (x - x0)**2 + (y - y0)**2 <= (self.star_circle_dia/2)**2
+    
+    def find_line_circle_intersections(self, start, end):
+        (x0, y0) = self.size/2, self.size/2
+        (x1, y1) = start
+        (x2, y2) = end
+        dx, dy = x2 - x1, y2 - y1
+        a = dx**2 + dy**2
+        b = 2 * (dx * (x1 - x0) + dy * (y1 - y0))
+        c = (x1 - x0)**2 + (y1 - y0)**2 - (self.star_circle_dia/2)**2
+        discriminant = b**2 - 4 * a * c
+        if discriminant < 0:
+            if self.is_point_inside_circle(start) and self.is_point_inside_circle(end):
+                return [start, end]  
+            return [] 
+        t1 = (-b + np.sqrt(discriminant)) / (2 * a)
+        t2 = (-b - np.sqrt(discriminant)) / (2 * a)
+        intersections = [(x1 + t * dx, y1 + t * dy) for t in [t1, t2] if 0 <= t <= 1]
+        return intersections
+    
+    def truncate_line(self, start, end, abs_amount):
+        # Removes absolute amount of length from line segment ends.
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        line_length = np.sqrt(dx**2 + dy**2)
+        truncation_ratio = abs_amount / line_length
+        new_start_x = start[0] + dx * truncation_ratio
+        new_start_y = start[1] + dy * truncation_ratio
+        new_end_x = end[0] - dx * truncation_ratio
+        new_end_y = end[1] - dy * truncation_ratio
+        return ((new_start_x, new_start_y), (new_end_x, new_end_y))
+    
+    def truncate_line_to_circle(self, start, end):
+        # If line segment exceeds circle bounds, truncate line to circle.
+        # Note: should only be run if EXACTLY ONE endpoint inside the circle!
+        intersections = self.find_line_circle_intersections(start, end)
+        start_inside = self.is_point_inside_circle(start)
+        endpoint_inside = start if start_inside else end
+        return [endpoint_inside, intersections[0]]
+    
+    def transform_paths(self, paths_data, x_dim, y_dim):
+        """Given some paths data, uses information from SVGHemisphere to transform into azimuthal equidistant cartesian coords."""
+        transformed_paths = []
+        for path_data in paths_data:
+            transformed_path = {'M': None, 'beziers': []}
+            # Transform the 'M' starting point
+            m_ra, m_dec = get_equirect_coords(path_data['M'][0], path_data['M'][1], x_dim=x_dim, y_dim=y_dim)
+            transformed_path['M'] = self.get_northern_hemisphere_cartesian(m_ra, m_dec)
+            # Transform each bezier segment
+            for bezier in path_data['beziers']:
+                transformed_bezier = []
+                for point in bezier:
+                    ra, dec = get_equirect_coords(point[0], point[1], x_dim=x_dim, y_dim=y_dim)
+                    transformed_bezier.append(self.get_northern_hemisphere_cartesian(ra, dec))
+                transformed_path['beziers'].append(transformed_bezier)
+            transformed_paths.append(transformed_path)
+        return transformed_paths
+    
+    # SVG-specific coloration helper functions
+    def create_star_gradient(self, star):
+        # Create a radial gradient from white at the center to the specified outer color at the edges
+        gradient = self.drawing.defs.add(self.drawing.radialGradient(id=star.hip))
+        inner_color = '#FFFFFF'
+        outer_color = bv_to_color(star.ci)
+        gradient.add_stop_color(offset='10%', color=inner_color, opacity='1')
+        gradient.add_stop_color(offset='70%', color=outer_color, opacity='1')
+        gradient.add_stop_color(offset='100%', color=outer_color, opacity='0')
+        return gradient
+
+
+    # Drawing Functions
+    def add_star_circle(self):
+        # This is the night-sky circle containing all stars and constellations.
+        self.elements['star_circle'] = self.drawing.add(
+            self.drawing.circle(
+                center=(self.size / 2, self.size / 2),
+                r=self.star_circle_dia / 2,
+                fill="#112233",
+                stroke='black'
+            )
+        )
+
+    def add_milky_way_svg(self, source_svg, x_dim, y_dim):
+        paths_data = extract_and_structure_paths(source_svg)
+        transformed_data = self.transform_paths(paths_data, x_dim, y_dim)
+        combined_path_string = ""
+        for path_data in transformed_data:
+            path_string = f"M {path_data['M'][0]},{path_data['M'][1]} "  # Move to the start point
+            for bezier in path_data['beziers']:
+                path_string += f"C {bezier[1][0]},{bezier[1][1]} {bezier[2][0]},{bezier[2][1]} {bezier[3][0]},{bezier[3][1]} "
+            combined_path_string += path_string  # Combine into one path string
+        # Create a single SVG path element with the combined path string
+        self.elements[source_svg] = self.drawing.add(
+            self.drawing.path(
+                d=combined_path_string, 
+                fill="#FFFFFF", 
+                fill_opacity=0.1, 
+                stroke="none", 
+                stroke_width=0, 
+                fill_rule="evenodd"
+            )
+        )
+
+    def add_constellation_lines(self, constellationship, truncation_amount=0.1, stroke_width=0.2):
+        for constellation in constellationship.constellations: # constellation = [(star, star), (star, star), ...]
+            for stars in constellation.seg_list: # stars = (star, star)
+                start = self.get_northern_hemisphere_cartesian(stars[0].ra, stars[0].dec)
+                end = self.get_northern_hemisphere_cartesian(stars[1].ra, stars[1].dec)
+                start, end = self.truncate_line(start, end, truncation_amount)
+                if self.is_point_inside_circle(start) and self.is_point_inside_circle(end): # Both inside
+                    self.elements[f'{stars[0].hip}-{stars[1].hip}'] = self.drawing.add(
+                        self.drawing.line(
+                            start, end, stroke='white', stroke_width=stroke_width)
+                    )
+                elif self.is_point_inside_circle(start) or self.is_point_inside_circle(end): # One inside
+                    endpoints = self.truncate_line_to_circle(start, end)
+                    self.elements[f'{stars[0].hip}-{stars[1].hip}'] = self.drawing.add(
+                        self.drawing.line(
+                            endpoints[0], endpoints[1], stroke='white', stroke_width=stroke_width)
+                    )
+
+    def add_stars(self, stars_dict, mag_limit, min_radius=0.5, max_radius=5, scale_type=1):
+        for star in stars_dict.values():
+            if star.dec < 90 - self.dec_degrees or star.mag > mag_limit:
+                continue
+            x, y = self.get_northern_hemisphere_cartesian(star.ra, star.dec)
+            star_radius = mag_to_radius(star.mag, min_radius=min_radius, max_radius=max_radius, scale_type=scale_type, max_mag=mag_limit, min_mag=-1.46)
+            self.create_star_gradient(star)
+            self.elements[star.hip] = self.drawing.add(self.drawing.circle(center=(x, y), r=star_radius, fill=f'url(#{star.hip})'))
+
+    def save_drawing(self):
+        self.drawing.save()
+
+
+# Other helper functions
 def get_stars_dict(star_data_loc, data_types, mag_limit):
     """Generate a dictionary for stars with a HIP number within a magnitude limit."""
     star_data = pd.read_csv(star_data_loc, usecols=data_types.keys(), dtype=data_types)
@@ -120,44 +278,15 @@ def get_stars_dict(star_data_loc, data_types, mag_limit):
     return {int(row['hip']): Star(int(row['hip']), row['proper'], row['ra'], row['dec'], row['mag'], row['ci'])
         for row in filtered_data.to_dict('records')}
 
-def is_point_inside_circle(point, center, radius):
-    x, y = point
-    x0, y0 = center
-    return (x - x0)**2 + (y - y0)**2 <= radius**2
-
-def find_line_circle_intersections(center, radius, start, end):
-    (x0, y0) = center
-    (x1, y1) = start
-    (x2, y2) = end
-    dx, dy = x2 - x1, y2 - y1
-    a = dx**2 + dy**2
-    b = 2 * (dx * (x1 - x0) + dy * (y1 - y0))
-    c = (x1 - x0)**2 + (y1 - y0)**2 - radius**2
-    discriminant = b**2 - 4 * a * c
-    if discriminant < 0:
-        if is_point_inside_circle(start, center, radius) and is_point_inside_circle(end, center, radius):
-            return [start, end]  
-        return [] 
-    t1 = (-b + np.sqrt(discriminant)) / (2 * a)
-    t2 = (-b - np.sqrt(discriminant)) / (2 * a)
-    intersections = [(x1 + t * dx, y1 + t * dy) for t in [t1, t2] if 0 <= t <= 1]
-    return intersections
-
-def truncate_line_to_circle(center, radius, start, end):
-    intersections = find_line_circle_intersections(center, radius, start, end)
-    start_inside = is_point_inside_circle(start, center, radius)
-    end_inside = is_point_inside_circle(end, center, radius)
-    if start_inside and end_inside:
-        return [start, end]  # Both points inside
-    elif start_inside or end_inside:
-        endpoint_inside = start if start_inside else end
-        if intersections:
-            return [endpoint_inside, intersections[0]]
-    elif intersections:
-        if len(intersections) == 2:
-            return intersections
-    return None
-
+def mag_to_radius(mag, min_radius=1, max_radius=10, scale_type=1, max_mag=6.5, min_mag=-1.46):
+    if mag > max_mag:
+        return min_radius  # If the star is dimmer than the max visible magnitude, use the smallest radius
+    if mag < min_mag:
+        mag = min_mag  # Cap the magnitude at the brightest star's magnitude to avoid negative radius values
+    relative_magnitude = (max_mag - mag) / (max_mag - min_mag)
+    scaled_magnitude = relative_magnitude ** scale_type
+    radius = min_radius + (max_radius - min_radius) * scaled_magnitude
+    return radius
 
 def bv_to_color(bv):
     # Define color ranges and corresponding B-V index breakpoints
@@ -182,82 +311,62 @@ def bv_to_color(bv):
             return f"#{r:02x}{g:02x}{b:02x}"
     return '#ffffff'
 
-def line_segment_length(start, end):
-    """Calculate the Euclidean distance between two points."""
-    (x1, y1) = start
-    (x2, y2) = end
-    length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-    return length
+def extract_and_structure_paths(svg_file):
+    tree = ET.parse(svg_file)
+    root = tree.getroot()
+    all_paths = []
+    for path in root.findall('{http://www.w3.org/2000/svg}path'):
+        d_attr = re.sub(r'\s*[Zz]\s*', '', path.get('d').strip())
+        subpaths = []
+        current_path = None
+        last_point = None
+        commands = re.findall(r'([MC][^MC]*)', d_attr)
+        for command in commands:
+            command_type = command[0]
+            points = [(float(x), float(y)) for x, y in re.findall(r'(\d+\.?\d*),(\d+\.?\d*)', command[1:].strip())]
+            if command_type == 'M':
+                current_path = {'M': points[0], 'beziers': []}
+                subpaths.append(current_path)
+                last_point = points[0]
+            elif command_type == 'C' and current_path is not None:
+                for i in range(0, len(points), 3):
+                    if i + 2 < len(points) and last_point is not None:
+                        bezier = [last_point, points[i], points[i+1], points[i+2]]
+                        current_path['beziers'].append(bezier)
+                        last_point = points[i+2]
+        all_paths.extend(subpaths)
+    return all_paths
 
-def get_northern_hemisphere_cartesian(star, graphic_size, dec_degrees, star_circle_dia):
-    theta_radians = star.ra / 24 * np.pi * 2
-    hypotenuse = ((90 - star.dec) / dec_degrees) * star_circle_dia/2
-    x = (graphic_size - star_circle_dia) / 2 + star_circle_dia/2 + np.sin(theta_radians) * hypotenuse
-    y = 100 + star_circle_dia/2 - np.cos(theta_radians) * hypotenuse
-    return (x, y)
-
-
-stars_dict = get_stars_dict(STAR_DATA_LOC, DATA_TYPES, 100) # No mag limit for now.
-parser = ConstellationParser(CONSTELLATIONS_LOC, stars_dict)
-constellations = parser.parse()
-constellationship = Constellationship(constellations, 'iau')
-
-# Okay, let's say we want to parameterize this.
-size = 1000 # This is the size of the ENTIRE ILLUSTRATION. 
-full_circle_dia = 900 # The circle containing the starscape AND months, tickmarks.
-star_circle_dia = 800 # This is the circle containing our stars
-dec_degrees = 108 # Number of degrees of declination to map. 90 would be one celestial hemisphere.
-
-# First let's try transforming the SVG and just... see what happens lol.
-drawing = svgwrite.Drawing(filename="star_map.svg", size=(f"{size}px", f"{size}px"))
-full_circle = drawing.add(drawing.circle(center=(size/2, size/2), r=full_circle_dia/2, fill="#ffffff", stroke='blue'))
-star_circle = drawing.add(drawing.circle(center=(size/2, size/2), r=star_circle_dia/2, fill="#112233", stroke='black'))
-line1 = drawing.add(drawing.line(start=(size/2, 0), end=(size/2, size), stroke='white', stroke_width=0.1))
-line2 = drawing.add(drawing.line(start=(0, size/2), end=(size, size/2), stroke='white', stroke_width=0.1))
-line3 = drawing.add(drawing.line(start=(0, 0), end=(size, size), stroke='white', stroke_width=0.1))
-line4 = drawing.add(drawing.line(start=(0, size), end=(size, 0), stroke='white', stroke_width=0.1))
-max_mag = 5
-
-# Constellations
-for constellation in constellationship.constellations:
-    for stars in constellation.seg_list:
-        # Segment is a tuple of two star objects
-        # So we could just get the x, y of each star, draw a line between them.
-        start = get_northern_hemisphere_cartesian(stars[0], size, dec_degrees, star_circle_dia)
-        end = get_northern_hemisphere_cartesian(stars[1], size, dec_degrees, star_circle_dia)
-        # if (start[0] >= 0 and end[0] >= 0) or (end[0] >= 0 and end[0] >= 0):
-        if is_point_inside_circle(start, (size/2, size/2), star_circle_dia/2) or is_point_inside_circle(end, (size/2, size/2), star_circle_dia/2):
-            endpoints = truncate_line_to_circle((size/2, size/2), star_circle_dia/2, start, end)
-            if endpoints:
-                if line_segment_length(*endpoints) > 200:
-                    print(stars)
-                a = drawing.add(drawing.line(endpoints[0], endpoints[1], stroke='white', stroke_width=0.1))
-
-# Stars
-for hip, star in stars_dict.items():
-    if star.dec < 90 - dec_degrees or star.mag > max_mag:
-        continue
-    x, y = get_northern_hemisphere_cartesian(star, size, dec_degrees, star_circle_dia)
-    star_radius = max_mag - star.mag
-    fill = bv_to_color(star.ci)
-    a = drawing.add(drawing.circle(center=(x, y), r=star_radius, fill=fill))
-
-def add_combined_paths_to_svg(drawing, transformed_paths):
-    combined_path_string = ""
-    for path_data in transformed_paths:
-        path_string = f"M {path_data['M'][0]},{path_data['M'][1]} "  # Move to the start point
-        for bezier in path_data['beziers']:
-            path_string += f"C {bezier[1][0]},{bezier[1][1]} {bezier[2][0]},{bezier[2][1]} {bezier[3][0]},{bezier[3][1]} "
-        combined_path_string += path_string  # Combine into one path string
-    # Create a single SVG path element with the combined path string
-    drawing.add(drawing.path(d=combined_path_string, fill="#FFFFFF", fill_opacity=0.1, stroke="none", stroke_width=0, fill_rule="evenodd"))
-
-# Usage
-add_combined_paths_to_svg(drawing, transformed_data)
+def get_equirect_coords(x, y, x_dim, y_dim):
+    """Converts equirectangular pixel coordinates to RA and DEC. x_dim should be width in pixels, y_dim should be height in pixels."""
+    ra = 24 - 24 * (x / x_dim)
+    dec = 90 - 180 * (y / y_dim)
+    return ra, dec
 
 
-drawing.save()
+if __name__ == '__main__':
+    # SVG Information
+    size = 1000 # This is the size of the ENTIRE ILLUSTRATION. 
+    full_circle_dia = 900 # The circle containing the starscape AND months, tickmarks.
+    star_circle_dia = 800 # This is the circle containing our stars
+    dec_degrees = 108 # Number of degrees of declination to map. 90 would be one celestial hemisphere.
 
-def create_svg_hemisphere(hemisphere='north', mag_limit=6.5, output='output.svg'):
-    pass
+    # Milky Way SVG Information
+    svg_files = ['star_map/data/mw_1.svg', 'star_map/data/mw_2.svg', 'star_map/data/mw_3.svg']
+    x_dim = 8998
+    y_dim = 4498
 
+    # Star and Constellation Information
+    stars_dict = get_stars_dict(STAR_DATA_LOC, DATA_TYPES, 100) # No mag limit for now.
+    parser = ConstellationParser(CONSTELLATIONS_LOC, stars_dict)
+    constellations = parser.parse()
+    constellationship = Constellationship(constellations, 'iau')
+    
+    # Drawing
+    svg_north = SVGHemisphere(size, full_circle_dia, star_circle_dia, dec_degrees, filename="star_map.svg", is_north=True)
+    svg_north.add_star_circle()
+    for file in svg_files:
+        svg_north.add_milky_way_svg(file, x_dim, y_dim)
+    svg_north.add_constellation_lines(constellationship, truncation_amount=2.5, stroke_width=0.2)
+    svg_north.add_stars(stars_dict, mag_limit=6.5, min_radius=0.1, max_radius=5, scale_type=1.5)
+    svg_north.save_drawing()
