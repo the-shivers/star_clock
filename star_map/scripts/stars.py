@@ -40,20 +40,17 @@ class Constellation:
         self.seg_count = seg_count
         self.seg_list = seg_list if seg_list is not None else []
         self._unique_stars = None
-
     def get_unique_stars(self):
         if self._unique_stars is None:  # Calculate only if needed
             stars = [star for segment in self.seg_list for star in segment]
             self._unique_stars = set(stars)
         return self._unique_stars
-    
     def __str__(self):
         unique_stars = self.get_unique_stars()
         return (
             f"{self.common_name} ({self.abbrv}): Unique Stars: {len(unique_stars)}, "
             f"Segments: {len(self.seg_list)}"
         )
-    
     def __repr__(self):
         return (
             f"Constellation(abbrv={self.abbrv!r}, common_name={self.common_name!r}, "
@@ -65,11 +62,9 @@ class ConstellationParser:
     def __init__(self, filepath, stars_dict):
         self.filepath = filepath
         self.stars_dict = stars_dict
-
     def parse(self):
         with open(self.filepath, 'r') as file:
             data = json.load(file)['constellations']
-
         constellations = []
         for item in data:
             abbrv = item['id'].split()[-1]
@@ -91,7 +86,6 @@ class Constellationship:
         self.constellations = constellations
         self.name = name
         self._unique_stars = None
-
     def get_unique_stars(self):
         if self._unique_stars is None:  # Calculate only if needed
             unique_stars = set()
@@ -99,7 +93,6 @@ class Constellationship:
                 unique_stars.update(constellation.get_unique_stars())
             self._unique_stars = unique_stars
         return self._unique_stars
-    
     def get_dimmest_star(self):
         unique_stars = self.get_unique_stars()
         dimmest_star = None

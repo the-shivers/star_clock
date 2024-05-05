@@ -295,6 +295,53 @@ def plot_density_heatmap(sky_grid, density_type='cumulative', extra_points=[]): 
     plt.show()
 
 
+# def plot_cartesian_density_with_contours(sky_grid, density_type='cumulative', levels=4, sigma=1, title='Star Density Heatmap with Contours', extra_points=[]): # Cartesian
+#     ra_size = len(sky_grid.ra_divisions) - 1
+#     dec_size = len(sky_grid.dec_divisions) - 1
+#     density_array = np.full((dec_size, ra_size), np.nan)
+#     ra_midpoints = []
+#     dec_midpoints = []
+#     for i, row in enumerate(sky_grid.regions):
+#         ra_midpoints.append(row[0].ra_midpoint)
+#         for j, region in enumerate(row):
+#             dec_midpoints.append(region.dec_midpoint)
+#             ra_idx = int((region.ra_midpoint - sky_grid.ra_divisions[0]) / (sky_grid.ra_divisions[-1] - sky_grid.ra_divisions[0]) * ra_size)
+#             dec_idx = int((region.dec_midpoint - sky_grid.dec_divisions[0]) / (sky_grid.dec_divisions[-1] - sky_grid.dec_divisions[0]) * dec_size)
+#             if density_type == 'cumulative':
+#                 density_array[dec_idx, ra_idx] = region.cumulative_density
+#             elif density_type == 'local':
+#                 density_array[dec_idx, ra_idx] = region.local_density
+#     smoothed_density = gaussian_filter(density_array, sigma=sigma)
+#     fig, ax = plt.subplots(figsize=(14, 7))
+#     ax.set_title(title)
+#     img = ax.imshow(smoothed_density, cmap='viridis', origin='lower', aspect='auto', interpolation='nearest')
+#     fig.colorbar(img, ax=ax, label='Star Density')
+#     # contours = ax.contour(smoothed_density, levels=levels, colors='white', alpha=0.5, linewidths=0.5)
+#     # plt.clabel(contours, inline=True, fontsize=8, fmt='%1.0f', colors='black', manual=False, inline_spacing=5, use_clabeltext=True)
+#     for (ra, dec), name in extra_points:
+#         ra_idx = int((ra - sky_grid.ra_divisions[0]) / (sky_grid.ra_divisions[-1] - sky_grid.ra_divisions[0]) * ra_size)
+#         dec_idx = int((dec - sky_grid.dec_divisions[0]) / (sky_grid.dec_divisions[-1] - sky_grid.dec_divisions[0]) * dec_size)
+#         ax.scatter(ra_idx, dec_idx, color='red', s=15, edgecolor='white', zorder=5)
+#         ax.text(ra_idx, dec_idx, name, color='white', ha='left', va='center', fontsize=4)
+#     num_ra_ticks = 24
+#     num_dec_ticks = 18
+#     ra_indices = np.linspace(0, smoothed_density.shape[1] - 1, num_ra_ticks, dtype=int)
+#     dec_indices = np.linspace(0, smoothed_density.shape[0] - 1, num_dec_ticks, dtype=int)
+#     ra_labels = [f'{ra_midpoints[idx]:.1f}h' for idx in ra_indices]
+#     dec_labels = [f'{dec_midpoints[idx]:.1f}°' for idx in dec_indices]
+#     ax.set_xticks(ra_indices)
+#     ax.set_yticks(dec_indices)
+#     ax.set_xticklabels(ra_labels)
+#     ax.set_yticklabels(dec_labels)
+#     ax.set_xlabel('Right Ascension (RA)')
+#     ax.set_ylabel('Declination (DEC)')
+#     plt.tight_layout()
+#     # plt.show()
+#     plt.savefig(f'star_map/pics/cartesian_contours_{levels}_{sigma}_{density_type}.png', format='png', dpi=300)
+
+
+
+
 def plot_cartesian_density_with_contours(sky_grid, density_type='cumulative', levels=4, sigma=1, title='Star Density Heatmap with Contours', extra_points=[]): # Cartesian
     ra_size = len(sky_grid.ra_divisions) - 1
     dec_size = len(sky_grid.dec_divisions) - 1
@@ -318,13 +365,14 @@ def plot_cartesian_density_with_contours(sky_grid, density_type='cumulative', le
     fig.colorbar(img, ax=ax, label='Star Density')
     contours = ax.contour(smoothed_density, levels=levels, colors='white', alpha=0.5, linewidths=0.5)
     # plt.clabel(contours, inline=True, fontsize=8, fmt='%1.0f', colors='black', manual=False, inline_spacing=5, use_clabeltext=True)
+    ax.invert_xaxis()  # This inverts the x-axis to show from 24h to 0h
     for (ra, dec), name in extra_points:
         ra_idx = int((ra - sky_grid.ra_divisions[0]) / (sky_grid.ra_divisions[-1] - sky_grid.ra_divisions[0]) * ra_size)
         dec_idx = int((dec - sky_grid.dec_divisions[0]) / (sky_grid.dec_divisions[-1] - sky_grid.dec_divisions[0]) * dec_size)
         ax.scatter(ra_idx, dec_idx, color='red', s=15, edgecolor='white', zorder=5)
         ax.text(ra_idx, dec_idx, name, color='white', ha='left', va='center', fontsize=4)
-    num_ra_ticks = 12
-    num_dec_ticks = 12
+    num_ra_ticks = 24
+    num_dec_ticks = 18
     ra_indices = np.linspace(0, smoothed_density.shape[1] - 1, num_ra_ticks, dtype=int)
     dec_indices = np.linspace(0, smoothed_density.shape[0] - 1, num_dec_ticks, dtype=int)
     ra_labels = [f'{ra_midpoints[idx]:.1f}h' for idx in ra_indices]
@@ -336,8 +384,13 @@ def plot_cartesian_density_with_contours(sky_grid, density_type='cumulative', le
     ax.set_xlabel('Right Ascension (RA)')
     ax.set_ylabel('Declination (DEC)')
     plt.tight_layout()
-    # plt.show()
+    plt.show()
     plt.savefig(f'star_map/pics/cartesian_contours_{levels}_{sigma}_{density_type}.png', format='png', dpi=300)
+
+
+
+
+
 
 
 def plot_polar_density_with_contours(sky_grid, density_type='local', levels=4, sigma=3, extra_points=[]): # Polar plot!
@@ -465,4 +518,6 @@ if __name__ == '__main__':
     # plot_density_heatmap_with_contours(sky_grid, density_type='cumulative', levels=[1050, 2400], sigma=1, title='Star Density Heatmap with Contours', extra_points=[(16.5, -26.4), (19.8, 8.9), (20.7, 45.3), (18.6, 38.8)])
     # plot_density_heatmap_with_contours(sky_grid, density_type='cumulative', levels=[1050, 2400], sigma=1, title='Star Density Heatmap with Contours', extra_points=[(16.5, -26.4), (19.8, 8.9), (20.7, 45.3), (18.6, 38.8)])
     # plot_polar_density_with_contours(sky_grid, density_type='local', levels=[1300, 1800, 2800], sigma=1.2, extra_points=stars_to_plot)
-    plot_cartesian_density_with_contours(sky_grid, density_type='local', levels=[1200, 1800, 2800], sigma=1, extra_points=stars_to_plot)
+    print('Plotting')
+    plot_cartesian_density_with_contours(sky_grid, density_type='local', levels=[1200, 1800, 3000], sigma=1, extra_points=stars_to_plot)
+    
