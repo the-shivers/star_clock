@@ -286,7 +286,7 @@ def get_stars_dict(star_data_loc, data_types, mag_limit):
     return {int(row['hip']): Star(int(row['hip']), row['proper'], row['ra'], row['dec'], row['mag'], row['ci'])
         for row in filtered_data.to_dict('records')}
 
-def mag_to_radius(mag, min_radius=1, max_radius=10, scale_type=1, max_mag=6.5, min_mag=-1.46):
+def mag_to_radius(mag, min_radius=1, max_radius=10, scale_type=1, max_mag=6.5, min_mag=0):
     if mag > max_mag:
         return min_radius  # If the star is dimmer than the max visible magnitude, use the smallest radius
     if mag < min_mag:
@@ -357,7 +357,7 @@ if __name__ == '__main__':
     size = 1000 # This is the size of the ENTIRE ILLUSTRATION. 
     full_circle_dia = 900 # The circle containing the starscape AND months, tickmarks.
     star_circle_dia = 800 # This is the circle containing our stars
-    dec_degrees = 108 # Number of degrees of declination to map. 90 would be one celestial hemisphere.
+    dec_degrees = 108 # Number of degrees of declination to map. 90 would be one celestial hemisphere. 180 is both hemispheres, but it gets hella distorted!
 
     # Milky Way SVG Information
     svg_files = ['star_map/data/mw_1.svg', 'star_map/data/mw_2.svg', 'star_map/data/mw_3.svg']
@@ -384,5 +384,5 @@ if __name__ == '__main__':
     for file in svg_files:
         svg_south.add_milky_way_svg(file, x_dim, y_dim)
     svg_south.add_constellation_lines(constellationship, truncation_amount=2.5, stroke_width=0.2)
-    svg_south.add_stars(stars_dict, mag_limit=7.5, min_radius=0.1, max_radius=5, scale_type=1.5)
+    svg_south.add_stars(stars_dict, mag_limit=7.5, min_radius=0.1, max_radius=5, scale_type=1.3)
     svg_south.save_drawing()
