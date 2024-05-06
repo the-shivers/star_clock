@@ -1,27 +1,9 @@
-"""
-The ultimate goal of this file is to return two SVG files
-given three parameters (hemisphere, maximum apparent magnitude, constellation skyculture).
-It returns one SVG file for stars, and one SVG file for constellation lines.
-"""
-
 import pandas as pd
 import numpy as np
 import xml.etree.ElementTree as ET
 import re
 import svgwrite
 import json
-
-CONSTELLATIONS_LOC = 'star_map/data/wester_iau_sky_culture.json'
-MAG_LIMIT = 5 # 6.5 is naked eye mag limit
-STAR_DATA_LOC = 'star_map/data/athyg_24_reduced_m10.csv'
-DATA_TYPES = {
-    'hip': 'Int64', # Nullable integer, for stars with no HIPPARCOS ID
-    'proper': str,
-    'ra': float,
-    'dec': float,
-    'mag': float,
-    'ci': float
-}
 
 class Star:
     def __init__(self, hip, proper, ra, dec, mag, ci):
@@ -66,7 +48,6 @@ class Constellation:
             f"Constellation(abbrv={self.abbrv!r}, common_name={self.common_name!r}, "
             f"latin_name={self.latin_name!r}, seg_count={self.seg_count!r}, seg_list={self.seg_list!r}"
         )
-
     
 class ConstellationParser:
     def __init__(self, filepath, stars_dict):
@@ -90,7 +71,6 @@ class ConstellationParser:
             constellations.append(Constellation(abbrv, common_name, latin_name, seg_count, seg_list))
         return constellations
     
-
 class Constellationship:
     def __init__(self, constellations, name):
         self.constellations = constellations
@@ -179,6 +159,113 @@ class SVGHemisphere:
         endpoint_inside = start if start_inside else end
         return [endpoint_inside, intersections[0]]
     
+    # def get_spherical_midpoint(self, star1, star2):
+    #     # Use modulo to handle wrap-around by shifting the midpoint calculation
+    #     # Note, this could error if RA coords are diametrically opposed (=12h apart)
+    #     midpoint_ra = (star1.ra + (star2.ra - star1.ra + 24) % 24 / 2) % 24
+    #     midpoint_dec = (star1.dec + star2.dec) / 2
+    #     return (midpoint_ra, midpoint_dec)
+
+    def get_unit_sphere_cartesian(self, star):
+        ra_rad = star.ra * (2 * np.pi / 24)
+        # Convert DEC from degrees to radians
+        dec_rad = star.dec * (np.pi / 180)
+        # Calculate Cartesian coordinates
+        x = np.cos(dec_rad) * np.cos(ra_rad)
+        y = np.cos(dec_rad) * np.sin(ra_rad)
+        z = np.sin(dec_rad)
+        return (x, y, z)
+    
+    def slerp(self, star1, star2, num_points=5):
+        # Get unit sphere Cartesian coordinates for both stars
+        p1 = np.array(self.get_unit_sphere_cartesian(star1))
+        p2 = np.array(self.get_unit_sphere_cartesian(star2))
+        # Compute the cosine of the angular distance between the points
+        cos_theta = np.dot(p1, p2)
+        theta = np.arccos(np.clip(cos_theta, -1, 1))  # Clip to avoid precision issues causing NaNs
+        # Slerp formula implementation
+        results = []
+        for i in range(1, num_points + 1):
+            t = i / (num_points + 1)  # Fractional positions along the path
+            sin_theta = np.sin(theta)
+            if sin_theta == 0:
+                # Both points are the same
+                interpolated = p1
+            else:
+                a = np.sin((1 - t) * theta) / sin_theta
+                b = np.sin(t * theta) / sin_theta
+                interpolated = a * p1 + b * p2
+            results.append(interpolated)
+        return results
+    
+    def unit_sphere_cartesian_to_ra_dec(self, cartesian):
+        x, y, z = cartesian
+        # Calculate declination in radians and convert to degrees
+        dec = np.arcsin(z) * (180 / np.pi)
+        # Calculate right ascension in radians and convert to hours
+        ra = np.arctan2(y, x) * (12 / np.pi)
+        if ra < 0:
+            ra += 24  # Normalize RA to be in the range [0, 24) hours
+        return ra, dec
+    
+    # def add_smooth_bezier_path(self, points, stroke_width=0.2):
+    #     print("\nadding smoothed bezier!! with points: \n")
+    #     for point in points:
+    #         print(point)
+    #     path = svgwrite.path.Path(d=self.make_smooth_path_d(points), stroke="white", fill="none", stroke_width=stroke_width)
+    #     self.drawing.add(path)
+
+    # def make_smooth_path_d(self, points):
+    #     n = len(points)
+    #     if n < 2:
+    #         return ""
+    #     coords = [self.get_hemisphere_cartesian(p.ra, p.dec) for p in points]
+    #     # Calculate tangents: Using a symmetric difference approach
+    #     tangents = [0.5 * (np.array(coords[i+1]) - np.array(coords[i-1])) if 0 < i < n-1 else np.array(coords[1]) - np.array(coords[0]) if i == 0 else np.array(coords[-1]) - np.array(coords[-2]) for i in range(n)]
+    #     # Modify tangent length based on desired curvature smoothness
+    #     tangent_lengths = [np.linalg.norm(t) / 4 for t in tangents]  # adjust divisor for tightness of curve
+    #     d = f"M {coords[0][0]}, {coords[0][1]}"
+    #     for i in range(n-1):
+    #         # Adjust control points to ensure smooth transitions
+    #         ctrl1 = np.array(coords[i]) + tangents[i] * tangent_lengths[i]
+    #         ctrl2 = np.array(coords[i+1]) - tangents[i+1] * tangent_lengths[i+1]
+    #         d += f" C {ctrl1[0]}, {ctrl1[1]}, {ctrl2[0]}, {ctrl2[1]}, {coords[i+1][0]}, {coords[i+1][1]}"
+    #     return d
+
+    # def make_smooth_path_d(self, points):
+    #     if len(points) < 2:
+    #         return  # Need at least two points to draw a curve
+    #     # Convert RA/DEC to Cartesian coordinates
+    #     coords = [self.get_hemisphere_cartesian(p.ra, p.dec) for p in points]
+    #     # Start the path at the first point
+    #     d = f"M {coords[0][0]} {coords[0][1]} "
+    #     # Use 'T' commands to create a smooth curve through all the points
+    #     for coord in coords[1:]:
+    #         d += f"T {coord[0]} {coord[1]} "
+    #     # Add the path to the SVG
+    #     path = svgwrite.path.Path(d=d, fill="none", stroke="white", stroke_width=0.2)
+    #     self.drawing.add(path)
+
+    def make_smooth_path_d(self, points, stroke_width):
+        n = len(points)
+        if n < 2:
+            return ""
+        coords = [np.array(self.get_hemisphere_cartesian(p.ra, p.dec)) for p in points]
+
+        # Start the path at the first coordinate
+        d = f"M {coords[0][0]} {coords[0][1]}"
+
+        # Generate control points and segments
+        for i in range(1, n):
+            # Calculate control points one third and two thirds along the segment
+            ctrl1 = coords[i-1] + (coords[i] - coords[i-1]) / 3
+            ctrl2 = coords[i-1] + 2 * (coords[i] - coords[i-1]) / 3
+            d += f" C {ctrl1[0]} {ctrl1[1]} {ctrl2[0]} {ctrl2[1]} {coords[i][0]} {coords[i][1]}"
+        path = svgwrite.path.Path(d=d, fill="none", stroke="white", stroke_width=stroke_width)
+        self.drawing.add(path)
+
+
+    
     def transform_paths(self, paths_data, x_dim, y_dim):
         """Given some paths data, uses information from SVGHemisphere to transform into azimuthal equidistant cartesian coords."""
         transformed_paths = []
@@ -207,7 +294,6 @@ class SVGHemisphere:
         gradient.add_stop_color(offset='70%', color=outer_color, opacity='1')
         gradient.add_stop_color(offset='100%', color=outer_color, opacity='0')
         return gradient
-
 
     # Drawing Functions
     def add_star_circle(self):
@@ -242,23 +328,40 @@ class SVGHemisphere:
             )
         )
 
-    def add_constellation_lines(self, constellationship, truncation_amount=0.1, stroke_width=0.2):
+    # def add_constellation_lines(self, constellationship, truncation_amount=0.1, stroke_width=0.2):
+    #     for constellation in constellationship.constellations: # constellation = [(star, star), (star, star), ...]
+    #         for stars in constellation.seg_list: # stars = (star, star)
+    #             start = self.get_hemisphere_cartesian(stars[0].ra, stars[0].dec)
+    #             end = self.get_hemisphere_cartesian(stars[1].ra, stars[1].dec)
+    #             start, end = self.truncate_line(start, end, truncation_amount)
+    #             if self.is_point_inside_circle(start) and self.is_point_inside_circle(end): # Both inside
+    #                 self.elements[f'{stars[0].hip}-{stars[1].hip}'] = self.drawing.add(
+    #                     self.drawing.line(
+    #                         start, end, stroke='white', stroke_width=stroke_width)
+    #                 )
+    #             elif self.is_point_inside_circle(start) or self.is_point_inside_circle(end): # One inside
+    #                 endpoints = self.truncate_line_to_circle(start, end)
+    #                 self.elements[f'{stars[0].hip}-{stars[1].hip}'] = self.drawing.add(
+    #                     self.drawing.line(
+    #                         endpoints[0], endpoints[1], stroke='white', stroke_width=stroke_width)
+    #                 )
+
+    def add_constellation_lines(self, constellationship, stroke_width=0.2):
         for constellation in constellationship.constellations: # constellation = [(star, star), (star, star), ...]
+            print('\nconstellation:\n', constellation, '\n\n')
             for stars in constellation.seg_list: # stars = (star, star)
-                start = self.get_hemisphere_cartesian(stars[0].ra, stars[0].dec)
-                end = self.get_hemisphere_cartesian(stars[1].ra, stars[1].dec)
-                start, end = self.truncate_line(start, end, truncation_amount)
-                if self.is_point_inside_circle(start) and self.is_point_inside_circle(end): # Both inside
-                    self.elements[f'{stars[0].hip}-{stars[1].hip}'] = self.drawing.add(
-                        self.drawing.line(
-                            start, end, stroke='white', stroke_width=stroke_width)
-                    )
-                elif self.is_point_inside_circle(start) or self.is_point_inside_circle(end): # One inside
-                    endpoints = self.truncate_line_to_circle(start, end)
-                    self.elements[f'{stars[0].hip}-{stars[1].hip}'] = self.drawing.add(
-                        self.drawing.line(
-                            endpoints[0], endpoints[1], stroke='white', stroke_width=stroke_width)
-                    )
+                interpolated = svg_north.slerp(stars[0], stars[1], num_points=5)
+                converted = [svg_north.unit_sphere_cartesian_to_ra_dec(cartesian) for cartesian in interpolated]
+                points_list = [stars[0]]
+                print('\n\n',stars[0])
+                for counter, coords in enumerate(converted):
+                    star = Star(counter-8, str(counter-8), coords[0], coords[1], 2, -0.5)
+                    print(star)
+                    points_list.append(star)
+                points_list.append(stars[1])
+                print(stars[1])
+                self.make_smooth_path_d(points_list, stroke_width)
+                # self.add_smooth_bezier_path(points_list, stroke_width=stroke_width)
 
     def add_stars(self, stars_dict, mag_limit, min_radius=0.5, max_radius=5, scale_type=1):
         for star in stars_dict.values():
@@ -351,12 +454,24 @@ def get_equirect_coords(x, y, x_dim, y_dim):
     dec = 90 - 180 * (y / y_dim)
     return ra, dec
 
-
 if __name__ == '__main__':
+    # Constants
+    CONSTELLATIONS_LOC = 'star_map/data/wester_iau_sky_culture.json'
+    MAG_LIMIT = 5 # 6.5 is naked eye mag limit
+    STAR_DATA_LOC = 'star_map/data/athyg_24_reduced_m10.csv'
+    DATA_TYPES = {
+        'hip': 'Int64', # Nullable integer, for stars with no HIPPARCOS ID
+        'proper': str,
+        'ra': float,
+        'dec': float,
+        'mag': float,
+        'ci': float
+    }
+
     # SVG Information
-    size = 1000 # This is the size of the ENTIRE ILLUSTRATION. 
-    full_circle_dia = 900 # The circle containing the starscape AND months, tickmarks.
-    star_circle_dia = 800 # This is the circle containing our stars
+    size = 2000 # This is the size of the ENTIRE ILLUSTRATION. 
+    full_circle_dia = 1800 # The circle containing the starscape AND months, tickmarks.
+    star_circle_dia = 1600 # This is the circle containing our stars
     dec_degrees = 108 # Number of degrees of declination to map. 90 would be one celestial hemisphere. 180 is both hemispheres, but it gets hella distorted!
 
     # Milky Way SVG Information
@@ -370,8 +485,16 @@ if __name__ == '__main__':
     constellations = parser.parse()
     constellationship = Constellationship(constellations, 'iau')
     
-    # Drawing
-    # svg_north = SVGHemisphere(size, full_circle_dia, star_circle_dia, dec_degrees, filename="star_map.svg", is_north=True)
+    # Drawing Curved Paths
+    svg_north = SVGHemisphere(size, full_circle_dia, star_circle_dia, dec_degrees, filename="star_map.svg", is_north=True)
+    svg_north.add_star_circle()
+    for file in svg_files:
+        svg_north.add_milky_way_svg(file, x_dim, y_dim)
+    svg_north.add_constellation_lines(constellationship, stroke_width=0.5)
+    svg_north.add_stars(stars_dict, mag_limit=7.5, min_radius=0.3, max_radius=11, scale_type=1.5)
+    svg_north.save_drawing()
+
+    # straight paths
     # svg_north.add_star_circle()
     # for file in svg_files:
     #     svg_north.add_milky_way_svg(file, x_dim, y_dim)
@@ -379,10 +502,11 @@ if __name__ == '__main__':
     # svg_north.add_stars(stars_dict, mag_limit=7.5, min_radius=0.1, max_radius=5, scale_type=1.5)
     # svg_north.save_drawing()
 
-    svg_south = SVGHemisphere(size, full_circle_dia, star_circle_dia, dec_degrees, filename="star_map_s.svg", is_north=False)
-    svg_south.add_star_circle()
-    for file in svg_files:
-        svg_south.add_milky_way_svg(file, x_dim, y_dim)
-    svg_south.add_constellation_lines(constellationship, truncation_amount=2.5, stroke_width=0.2)
-    svg_south.add_stars(stars_dict, mag_limit=7.5, min_radius=0.1, max_radius=5, scale_type=1.3)
-    svg_south.save_drawing()
+    # straight paths south
+    # svg_south = SVGHemisphere(size, full_circle_dia, star_circle_dia, dec_degrees, filename="star_map_s.svg", is_north=False)
+    # svg_south.add_star_circle()
+    # for file in svg_files:
+    #     svg_south.add_milky_way_svg(file, x_dim, y_dim)
+    # svg_south.add_constellation_lines(constellationship, truncation_amount=2.5, stroke_width=0.2)
+    # svg_south.add_stars(stars_dict, mag_limit=7.5, min_radius=0.1, max_radius=5, scale_type=1.3)
+    # svg_south.save_drawing()
