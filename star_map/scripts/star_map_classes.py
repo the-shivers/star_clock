@@ -389,7 +389,7 @@ class SVGHemisphere:
 
     def add_azimuthal_axes(self, n=8, stroke_color='#FFFFFF', stroke_width=1, ticks=True, tick_degs=10, tick_width=10, dec_rings=True):
         """Adds azimuthal axes. n is the number of slices we divide the pizza into."""
-        ticks = self.dec_degrees // tick_degs
+        ticks = self.dec_degrees // tick_degs - 1
         tick_distances = [j / (ticks + 1) * self.star_circle_dia / 2 for j in range(1, ticks+1)]
         if self.is_north:
             labels = [f'{90 - int(tick_degs*(j+1))}°' for j in range(len(tick_distances))]
@@ -432,6 +432,16 @@ class SVGHemisphere:
                             center=(self.size/2, self.size/2), r=value, fill='none', stroke=stroke_color, stroke_width=stroke_width
                         )
                     )
+
+    def add_equator(self, stroke_color='#FFFFFF', stroke_width=0.2):
+        if self.dec_degrees < 90:
+            return
+        radius = 90 / self.dec_degrees * self.star_circle_dia / 2
+        self.elements['equator'] = self.drawing.add(
+            self.drawing.circle(
+                center=(self.size/2, self.size/2), r=radius, fill='none', stroke=stroke_color, stroke_width=stroke_width
+            )
+        )
 
     def add_milky_way_svg(self, source_svg, x_dim, y_dim, opacity=0.1):
         paths_data = self.extract_and_structure_paths(source_svg)
@@ -491,19 +501,6 @@ class SVGHemisphere:
             else:
                 fill = self.bv_to_color(star.ci)
             self.elements[star.hip] = self.drawing.add(self.drawing.circle(center=(x, y), r=star_radius, fill=fill))
-
-    def add_text(self, text, pos, font_family='Josefin Sans', font_size='20', font_weight='normal', font_style='normal', fill='#FFFFFF'):
-        self.elements[f'text_{text[0:10].replace(" ","")}'] = self.drawing.add(
-            self.drawing.text(
-                text, 
-                insert=pos, 
-                font_family=font_family, 
-                font_size=font_size, 
-                font_weight=font_weight, 
-                font_style=font_style,
-                fill=fill
-            )
-        )
 
     def add_text_centered_rotated(self, text, style, ra, dec, rotation):
         x, y = self.get_hemisphere_cartesian(ra, dec)
