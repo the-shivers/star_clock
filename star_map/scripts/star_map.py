@@ -34,7 +34,7 @@ styles = {
         'font_weight': 400, # Regular
         'font_style': 'normal',
         'fill': '#FFFFFF',
-        'src': f'{dir}/star_map/data/JosefinSans-Regular.ttf'
+        'src': f'{dir}/star_map/fonts/JosefinSans-Regular.ttf'
     },
     'small': {
         'font_family': 'Josefin Sans',
@@ -42,7 +42,7 @@ styles = {
         'font_weight': 300, # Light
         'font_style': 'normal',
         'fill': '#FFFFFF',
-        'src': f'{dir}/star_map/data/JosefinSans-Light.ttf'
+        'src': f'{dir}/star_map/fonts/JosefinSans-Light.ttf'
     }
 }
 
