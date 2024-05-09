@@ -15,6 +15,7 @@ sky_culture = 'snt'
 star_data_loc = f'{dir}/star_map/data/stars/athyg_24_reduced_m10.csv'
 constellations_json = f'{dir}/star_map/data/sky_cultures/{sky_culture}/constellationship.json'
 const_coords_loc = f'{dir}/star_map/data/sky_cultures/{sky_culture}/constellation_coords.csv'
+is_north = False
 mag_limit = 5.5 # For limiting size of stars list.
 min_radius = 0.5
 max_radius = 10
@@ -26,7 +27,8 @@ size = 2000 # This is the size of the ENTIRE ILLUSTRATION.
 full_circle_dia = 1800 # The circle containing the starscape AND months, tickmarks.
 star_circle_dia = 1600 # This is the circle containing our stars
 dec_degrees = 108 # Number of degrees of declination to map. 90 would be one celestial hemisphere. 180 is both hemispheres, but it gets hella distorted!
-output_loc = f'{dir}/star_map/svg_output/star_map.svg'
+hemisphere_code = 'n' if is_north else 's'
+output_loc = f'{dir}/star_map/svg_output/star_map_{hemisphere_code}.svg'
 
 # Milky Way SVG config
 svg_files = [f'{dir}/star_map/data/milky_way/mw_1.svg', f'{dir}/star_map/data/milky_way/mw_2.svg', f'{dir}/star_map/data/milky_way/mw_3.svg']
@@ -90,7 +92,7 @@ if __name__ == '__main__':
     constellation_coords_dict = constellation_coords_df.set_index('latin_name').to_dict(orient='index')
     
     print("Building SVG...")
-    svg_north = SVGHemisphere(size, full_circle_dia, star_circle_dia, dec_degrees, filename=output_loc, is_north=True)
+    svg_north = SVGHemisphere(size, full_circle_dia, star_circle_dia, dec_degrees, filename=output_loc, is_north=is_north)
     svg_north.add_star_circle(fill=star_circle_col)
     svg_north.add_azimuthal_axes(n=axes_n, stroke_color=axes_col, stroke_width=axes_stroke_width, ticks=axes_ticks, tick_degs=axes_tick_degs, tick_width=axes_tick_width, dec_rings=False)
     svg_north.add_equator(stroke_color=equator_col, stroke_width=equator_stroke_width)
