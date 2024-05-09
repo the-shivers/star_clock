@@ -498,8 +498,16 @@ class SVGHemisphere:
         font = ImageFont.truetype(style['src'], style['font_size'])
         dummy_image = Image.new('RGB', (1, 1))
         draw = ImageDraw.Draw(dummy_image)
+        # Get width, correct for additional letter spacing
+        text_width = 0
+        if isinstance(style['letter_spacing'], int):
+            for char in text:
+                bbox = draw.textbbox((0, 0), char, font=font)
+                char_width = bbox[2] - bbox[0]
+                text_width += char_width + style['letter_spacing']
+        text_width -= style['letter_spacing']  # Remove extra spacing added at the end
+        # Now we can get height
         bbox = draw.textbbox((0, 0), text, font=font)
-        text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
         centered_x = x - text_width / 2
         centered_y = y + text_height / 2
@@ -530,6 +538,7 @@ class SVGHemisphere:
         )
         self.elements[f'text_{text[0:10].replace(" ","")}_stroke'] = self.drawing.add(text_element_stroke)
         self.elements[f'text_{text[0:10].replace(" ","")}'] = self.drawing.add(text_element)
+
     
     def save_drawing(self):
         self.drawing.save()

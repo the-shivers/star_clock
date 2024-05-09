@@ -11,7 +11,7 @@ from star_map_classes import (
 dir = os.path.expanduser('~/star_clock')
 
 # Star and constellation config
-sky_culture = 'rey'
+sky_culture = 'snt'
 star_data_loc = f'{dir}/star_map/data/stars/athyg_24_reduced_m10.csv'
 constellations_json = f'{dir}/star_map/data/sky_cultures/{sky_culture}/constellationship.json'
 const_coords_loc = f'{dir}/star_map/data/sky_cultures/{sky_culture}/constellation_coords.csv'
@@ -51,15 +51,15 @@ equator_stroke_width = 0.3
 
 constellation_lines_col = '#86C2FF'
 constellation_stroke_width = 1
-constellation_trunc_rate = 2.5
+constellation_trunc_rate = 1.5
 
 styles = {
     'constellation': {
         'font_family': 'Josefin Sans',
         'font_size': 12,
         'font_weight': 300, # Regular
-        'font_style': 'italic', # 'normal', 'italic
-        'letter_spacing': 5,
+        'font_style': 'normal', # 'normal', 'italic
+        'letter_spacing': 5, # 'normal', 5, 3
         'fill': '#86C2FF',
         'src': f'{dir}/star_map/fonts/JosefinSans-Light.ttf',
         'stroke': star_circle_col,
@@ -78,26 +78,38 @@ styles = {
 }
 
 if __name__ == '__main__':
+    print("Getting stars...")
     starholder = StarHolder(star_data_loc)
     parser = ConstellationParser(constellations_json, starholder)
+    print("Parsing constellations...")
     constellations = parser.parse()
-    constellationship = Constellationship(constellations, 'iau')
+    print("Building constellationship...")
+    constellationship = Constellationship(constellations, sky_culture)
+    print("Getting coordinates of constellations...")
     constellation_coords_df = pd.read_csv(const_coords_loc)
     constellation_coords_dict = constellation_coords_df.set_index('latin_name').to_dict(orient='index')
     
+    print("Building SVG...")
     svg_north = SVGHemisphere(size, full_circle_dia, star_circle_dia, dec_degrees, filename=output_loc, is_north=True)
     svg_north.add_star_circle(fill=star_circle_col)
     svg_north.add_azimuthal_axes(n=axes_n, stroke_color=axes_col, stroke_width=axes_stroke_width, ticks=axes_ticks, tick_degs=axes_tick_degs, tick_width=axes_tick_width, dec_rings=False)
     svg_north.add_equator(stroke_color=equator_col, stroke_width=equator_stroke_width)
     
+    print("Adding constellation lines...")
     # svg_north.add_constellation_lines_straight(constellationship, stroke_width=constellation_stroke_width, stroke_color=constellation_lines_col)
     svg_north.add_constellation_lines_curved(constellationship, stroke_width=constellation_stroke_width, stroke_color=constellation_lines_col)
+    print("Adding stars...")
     svg_north.add_stars(starholder, constellationship, mag_limit=mag_limit, min_radius=min_radius, max_radius=max_radius, scale_type=scale_type, gradient=gradient)
+    print("Masking...")
     svg_north.add_star_mask(constellationship, truncation_rate=constellation_trunc_rate, mask_id='star-masks')
+    print("Labelling...")
     for key, value in constellation_coords_dict.items():
-        svg_north.add_text_centered_rotated(key.upper(), styles['constellation'], value['ra'], value['dec'], value['ra'] / 24 * 360 + value['rot'])
+        for i, subkey in enumerate(key.split(' ')):
+            svg_north.add_text_centered_rotated(subkey.upper(), styles['constellation'], value['ra'], value['dec'] + i * 2, value['ra'] / 24 * 360 + value['rot'])
+    print("Milking...")
     for file in svg_files:
         svg_north.add_milky_way_svg(file, x_dim, y_dim, color=milky_way_color, opacity=milky_way_alpha)
+    print("Saving file!")
     svg_north.save_drawing()
 
 
