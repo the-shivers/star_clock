@@ -11,10 +11,15 @@ from star_map_classes import (
 dir = os.path.expanduser('~/star_clock')
 
 # Star and constellation config
-constellations_json = f'{dir}/star_map/data/wester_iau_sky_culture.json'
-mag_limit = 7.5 # For limiting size of stars list.
-star_data_loc = f'{dir}/star_map/data/athyg_24_reduced_m10.csv'
-const_coords_loc = f'{dir}/star_map/data/constellation_coords.csv'
+sky_culture = 'rey'
+star_data_loc = f'{dir}/star_map/data/stars/athyg_24_reduced_m10.csv'
+constellations_json = f'{dir}/star_map/data/sky_cultures/{sky_culture}/constellationship.json'
+const_coords_loc = f'{dir}/star_map/data/sky_cultures/{sky_culture}/constellation_coords.csv'
+mag_limit = 5.5 # For limiting size of stars list.
+min_radius = 0.5
+max_radius = 10
+scale_type = 1.3 # >1 = exponential with bigger stars MUCH brighter than dim ones, 1 = linear, <1 = logarithmic
+gradient = False # Gradient effect on stars
 
 # SVG configuration
 size = 2000 # This is the size of the ENTIRE ILLUSTRATION. 
@@ -24,24 +29,48 @@ dec_degrees = 108 # Number of degrees of declination to map. 90 would be one cel
 output_loc = f'{dir}/star_map/svg_output/star_map.svg'
 
 # Milky Way SVG config
-svg_files = [f'{dir}/star_map/data/mw_1.svg', f'{dir}/star_map/data/mw_2.svg', f'{dir}/star_map/data/mw_3.svg']
+svg_files = [f'{dir}/star_map/data/milky_way/mw_1.svg', f'{dir}/star_map/data/milky_way/mw_2.svg', f'{dir}/star_map/data/milky_way/mw_3.svg']
 x_dim = 8998
 y_dim = 4498
 
-# Label styles
+# Color palette and fonts styles
+star_circle_col = '#1E3A56'
+
+axes_col = '#3C6893'
+axes_n = 8
+axes_stroke_width = 1
+axes_ticks = True
+axes_tick_degs = 10
+axes_tick_width = 8
+
+milky_way_color = '#FFFFFF'
+milky_way_alpha = 0.08
+
+equator_col = '#FFFFFF'
+equator_stroke_width = 0.3
+
+constellation_lines_col = '#86C2FF'
+constellation_stroke_width = 1
+constellation_trunc_rate = 2.5
+
 styles = {
-    'big': {
+    'constellation': {
         'font_family': 'Josefin Sans',
-        'font_size': 16,
+        'font_size': 12,
         'font_weight': 300, # Regular
-        'font_style': 'normal',
-        'fill': '#FFFFFF',
-        'src': f'{dir}/star_map/fonts/JosefinSans-Light.ttf'
+        'font_style': 'italic', # 'normal', 'italic
+        'letter_spacing': 5,
+        'fill': '#86C2FF',
+        'src': f'{dir}/star_map/fonts/JosefinSans-Light.ttf',
+        'stroke': star_circle_col,
+        'stroke_width': '5px'
     },
     'small': {
         'font_family': 'Josefin Sans',
         'font_size': 14,
         'font_weight': 300, # Light
+        'font_style': 'normal',
+        'letter_spacing': 'normal',
         'font_style': 'normal',
         'fill': '#FFFFFF',
         'src': f'{dir}/star_map/fonts/JosefinSans-Light.ttf'
@@ -49,8 +78,7 @@ styles = {
 }
 
 if __name__ == '__main__':
-    # Star and Constellation Information
-    starholder = StarHolder(star_data_loc, 7.5) # No mag limit for now.
+    starholder = StarHolder(star_data_loc)
     parser = ConstellationParser(constellations_json, starholder)
     constellations = parser.parse()
     constellationship = Constellationship(constellations, 'iau')
@@ -58,17 +86,18 @@ if __name__ == '__main__':
     constellation_coords_dict = constellation_coords_df.set_index('latin_name').to_dict(orient='index')
     
     svg_north = SVGHemisphere(size, full_circle_dia, star_circle_dia, dec_degrees, filename=output_loc, is_north=True)
-    svg_north.add_star_circle(fill="#1E3A56", stroke="none")
-    svg_north.add_azimuthal_axes(n=8, stroke_color='#3C6893', stroke_width=1, ticks=True, tick_degs=10, tick_width=8, dec_rings=False)
-    svg_north.add_equator(stroke_color='#FFFFFF', stroke_width=0.3)
-    # for file in svg_files:
-    #     svg_north.add_milky_way_svg(file, x_dim, y_dim, opacity=0.08)
-    # svg_north.add_constellation_lines_straight(constellationship, stroke_width=1, stroke_color='#86C2FF')
-    svg_north.add_constellation_lines_curved(constellationship, stroke_width=1, stroke_color='#86C2FF')
-    svg_north.add_stars(starholder, mag_limit=6.5, min_radius=0.5, max_radius=10, scale_type=1.3, gradient=False)
-    # svg_north.add_star_mask(constellationship, truncation_rate=1.3, mask_id='star-masks')
+    svg_north.add_star_circle(fill=star_circle_col)
+    svg_north.add_azimuthal_axes(n=axes_n, stroke_color=axes_col, stroke_width=axes_stroke_width, ticks=axes_ticks, tick_degs=axes_tick_degs, tick_width=axes_tick_width, dec_rings=False)
+    svg_north.add_equator(stroke_color=equator_col, stroke_width=equator_stroke_width)
+    
+    # svg_north.add_constellation_lines_straight(constellationship, stroke_width=constellation_stroke_width, stroke_color=constellation_lines_col)
+    svg_north.add_constellation_lines_curved(constellationship, stroke_width=constellation_stroke_width, stroke_color=constellation_lines_col)
+    svg_north.add_stars(starholder, constellationship, mag_limit=mag_limit, min_radius=min_radius, max_radius=max_radius, scale_type=scale_type, gradient=gradient)
+    svg_north.add_star_mask(constellationship, truncation_rate=constellation_trunc_rate, mask_id='star-masks')
     for key, value in constellation_coords_dict.items():
-        svg_north.add_text_centered_rotated(key.upper(), styles['big'], value['ra'], value['dec'], value['ra'] / 24 * 360 + value['rot'])
+        svg_north.add_text_centered_rotated(key.upper(), styles['constellation'], value['ra'], value['dec'], value['ra'] / 24 * 360 + value['rot'])
+    for file in svg_files:
+        svg_north.add_milky_way_svg(file, x_dim, y_dim, color=milky_way_color, opacity=milky_way_alpha)
     svg_north.save_drawing()
 
 
@@ -79,5 +108,6 @@ if __name__ == '__main__':
 
 # TODO: Start labeling! And add DSOs which aer now clean lol.
 # TODO: Axes, labels, dates, elliptic, equator, RA/DEC
+# 
 
 

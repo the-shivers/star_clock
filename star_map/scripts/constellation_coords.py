@@ -13,11 +13,12 @@ from star_map_classes import (
 dir = os.path.expanduser('~/star_clock')
 
 # Star and constellation config
-constellations_json = f'{dir}/star_map/data/wester_iau_sky_culture.json'
+# constellations_json = f'{dir}/star_map/data/western_iau_sky_culture.json'
+constellations_json = f'{dir}/star_map/data/sky_cultures/snt/western_snt_sky_culture.json'
 mag_limit = 7.5 # For limiting size of stars list.
-star_data_loc = f'{dir}/star_map/data/athyg_24_reduced_m10.csv'
+star_data_loc = f'{dir}/star_map/data/stars/athyg_24_reduced_m10.csv'
 
-starholder = StarHolder(star_data_loc, 7.5) # No mag limit for now.
+starholder = StarHolder(star_data_loc, 7.5)
 parser = ConstellationParser(constellations_json, starholder)
 constellations = parser.parse()
 
@@ -40,5 +41,5 @@ for constellation in constellations:
 
 df = pd.DataFrame.from_dict(coords_dict, orient='index').reset_index()
 df.columns = ['latin_name', 'ra', 'dec', 'rot']
-csv_filename = f'{dir}/star_map/data/constellation_coords_raw.csv'
+csv_filename = f'{dir}/star_map/data/sky_cultures/snt/constellation_coords_raw.csv'
 df.to_csv(csv_filename, index=False)

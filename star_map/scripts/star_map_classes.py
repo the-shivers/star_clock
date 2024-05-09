@@ -31,7 +31,7 @@ class Star:
     
 
 class StarHolder:
-    def __init__(self, csv_loc, mag_limit):
+    def __init__(self, csv_loc, mag_limit=20):
         self.stars = self.get_stars(csv_loc, mag_limit)
 
     def get_stars(self, csv_loc, mag_limit):
@@ -132,14 +132,17 @@ class ConstellationParser:
         constellations = []
         for item in data:
             abbrv = item['id'].split()[-1]
-            if len(abbrv) >= 4: # Indicates a subconstellation, e.g. ursa major paws
+            if len(abbrv) >= 4: # Indicates a subconstellation, e.g. ursa major paws for rey star culture
                 continue
             common_name = item['common_name']['english']
-            latin_name = item['common_name'].get('native', None)
+            latin_name = item['common_name'].get('native', common_name)
             seg_list = []
             for line in item['lines']:
-                seg_list.extend([(self.starholder.get_star_by_hip(line[i]), self.starholder.get_star_by_hip(line[i + 1]))
-                                 for i in range(len(line) - 1)])
+                for i in range(len(line) - 1):
+                    # Error correction
+                    # if self.starholder.get_star_by_hip(line[i]) is None or self.starholder.get_star_by_hip(line[i + 1] is None):
+                    #     print(f"Error: {item['common_name']['english']} could not find stars: {line[i]}, {line[i + 1]}")
+                    seg_list.append((self.starholder.get_star_by_hip(line[i]), self.starholder.get_star_by_hip(line[i + 1])))
             seg_count = len(seg_list)
             constellations.append(Constellation(abbrv, common_name, latin_name, seg_count, seg_list))
         return constellations
@@ -283,22 +286,18 @@ class SVGHemisphere:
     
     # SVG-specific coloration/sizing helper functions
     def bv_to_color(self, bv):
-        # Define color ranges and corresponding B-V index breakpoints
         colors = ['#94B6FF', '#99B9FF', '#C9D9FF', '#ECEEFF', '#FFFFFF', '#FFF2EE', '#FFE7D2', '#FFCC98']
         breakpoints = [-0.33, -0.15, 0.0, 0.25, 0.58, 0.81, 1.4, float('inf')]  # Open-ended for values beyond 1.4
-        # Determine the segment the bv value falls into
         for i in range(len(breakpoints) - 1):
             if breakpoints[i] <= bv < breakpoints[i + 1]:
-                # Calculate the normalized position of bv between the current and next breakpoint
                 lower_bound = breakpoints[i]
                 upper_bound = breakpoints[i + 1]
                 t = (bv - lower_bound) / (upper_bound - lower_bound) if upper_bound != float('inf') else 1.0
-                # Linear interpolation of hex colors
                 color_start = tuple(int(colors[i][j:j+2], 16) for j in range(1, 7, 2))
                 if i+1 < len(colors):
                     color_end = tuple(int(colors[i+1][j:j+2], 16) for j in range(1, 7, 2))
                 else:
-                    color_end = color_start  # No interpolation beyond the last specified color
+                    color_end = color_start
                 r = int(color_start[0] + t * (color_end[0] - color_start[0]))
                 g = int(color_start[1] + t * (color_end[1] - color_start[1]))
                 b = int(color_start[2] + t * (color_end[2] - color_start[2]))
@@ -306,7 +305,6 @@ class SVGHemisphere:
         return '#ffffff'
 
     def create_star_gradient(self, star):
-        # Create a radial gradient from white at the center to the specified outer color at the edges
         gradient = self.drawing.defs.add(self.drawing.radialGradient(id=star.hip))
         inner_color = '#FFFFFF'
         outer_color = self.bv_to_color(star.ci)
@@ -326,7 +324,7 @@ class SVGHemisphere:
         return radius
     
     def add_star_mask(self, constellationship, truncation_rate=2, mask_id = 'star-masks'):
-        # Note: must be performed after stars have been added to the drawing.
+        # Note: must be performed AFTER stars have been added to the drawing.
         self.elements[mask_id] = self.drawing.defs.add(self.drawing.mask(id=mask_id, maskUnits="userSpaceOnUse"))
         self.elements[mask_id].add(self.drawing.circle((self.size/2, self.size/2), r=self.star_circle_dia/2, fill="white"))
         constellationship.get_unique_stars()
@@ -366,7 +364,6 @@ class SVGHemisphere:
 
     # Drawing Functions
     def add_star_circle(self, fill="#112233", stroke="black"):
-        # This is the night-sky circle containing all stars and constellations.
         self.elements['star_circle'] = self.drawing.add(
             self.drawing.circle(
                 center=(self.size / 2, self.size / 2),
@@ -376,21 +373,11 @@ class SVGHemisphere:
             )
         )
 
-    # def circle_bezier_path(center, radius):
-    #     cx, cy = center
-    #     c = radius * (4/3) * np.tan(np.pi / 8)  # Control point offset
-    #     path = f'M {cx + radius} {cy} '
-    #     path += f'C {cx + radius} {cy + c}, {cx + c} {cy + radius}, {cx} {cy + radius} '
-    #     path += f'C {cx - c} {cy + radius}, {cx - radius} {cy + c}, {cx - radius} {cy} '
-    #     path += f'C {cx - radius} {cy - c}, {cx - c} {cy - radius}, {cx} {cy - radius} '
-    #     path += f'C {cx + c} {cy - radius}, {cx + radius} {cy - c}, {cx + radius} {cy} '
-    #     path += 'Z'
-    #     return path
-
     def add_azimuthal_axes(self, n=8, stroke_color='#FFFFFF', stroke_width=1, ticks=True, tick_degs=10, tick_width=10, dec_rings=True):
         """Adds azimuthal axes. n is the number of slices we divide the pizza into."""
-        ticks = self.dec_degrees // tick_degs - 1
-        tick_distances = [j / (ticks + 1) * self.star_circle_dia / 2 for j in range(1, ticks+1)]
+        ticks = int((self.dec_degrees - 0.1) // tick_degs)
+        max_tick_distance = tick_degs * (ticks + 1) / self.dec_degrees * self.star_circle_dia / 2
+        tick_distances = [j / (ticks + 1) * max_tick_distance for j in range(1, ticks+1)]
         if self.is_north:
             labels = [f'{90 - int(tick_degs*(j+1))}°' for j in range(len(tick_distances))]
         else:
@@ -399,7 +386,6 @@ class SVGHemisphere:
         for i in range(n):
             unit_x = np.sin(2*i/n*np.pi)
             unit_y = np.cos(2*i/n*np.pi)
-            # print(f'I will plot for n={i} with unit_x={unit_x} and unit_y={unit_y}\nstart=({self.size/2}, {self.size/2}), end=({self.star_circle_dia/2*unit_x}, {self.star_circle_dia/2*unit_y})')
             self.elements[f'axis_{i}'] = self.drawing.add(
                 self.drawing.line(
                     start=(self.size/2, self.size/2),
@@ -408,7 +394,6 @@ class SVGHemisphere:
                     stroke=stroke_color
                 )
             )
-            # Need to do the geometry to find the perpindicular line (tickmarks)
             if ticks:
                 for key, value in tick_dict.items():
                     start_x = self.size/2+value*unit_x
@@ -443,20 +428,19 @@ class SVGHemisphere:
             )
         )
 
-    def add_milky_way_svg(self, source_svg, x_dim, y_dim, opacity=0.1):
+    def add_milky_way_svg(self, source_svg, x_dim, y_dim, color='#FFFFFF', opacity=0.1):
         paths_data = self.extract_and_structure_paths(source_svg)
         transformed_data = self.transform_paths(paths_data, x_dim, y_dim)
         combined_path_string = ""
         for path_data in transformed_data:
-            path_string = f"M {path_data['M'][0]},{path_data['M'][1]} "  # Move to the start point
+            path_string = f"M {path_data['M'][0]},{path_data['M'][1]} "
             for bezier in path_data['beziers']:
                 path_string += f"C {bezier[1][0]},{bezier[1][1]} {bezier[2][0]},{bezier[2][1]} {bezier[3][0]},{bezier[3][1]} "
-            combined_path_string += path_string  # Combine into one path string
-        # Create a single SVG path element with the combined path string
+            combined_path_string += path_string
         self.elements[source_svg] = self.drawing.add(
             self.drawing.path(
                 d=combined_path_string, 
-                fill="#FFFFFF", 
+                fill=color, 
                 fill_opacity=opacity, 
                 stroke="none", 
                 stroke_width=0, 
@@ -467,6 +451,10 @@ class SVGHemisphere:
     def add_constellation_lines_curved(self, constellationship, stroke_color='#FFFFFF', stroke_width=0.2, mask_id='star-masks'):
         for constellation in constellationship.constellations: # constellation = [(star, star), (star, star), ...]
             for stars in constellation.seg_list: # stars = (star, star)
+                start = self.get_hemisphere_cartesian(stars[0].ra, stars[0].dec)
+                end = self.get_hemisphere_cartesian(stars[1].ra, stars[1].dec)
+                if not self.is_point_inside_star_circle(start) and not self.is_point_inside_star_circle(end):
+                    continue
                 interpolated = self.slerp(stars[0], stars[1], num_points=5)
                 converted = [self.unit_sphere_cartesian_to_ra_dec(cartesian) for cartesian in interpolated]
                 points_list = [stars[0]] + [Star(0, '', coords[0], coords[1], 2, -0.5) for coords in converted] + [stars[1]]
@@ -485,13 +473,14 @@ class SVGHemisphere:
                         start, end, stroke=stroke_color, stroke_width=stroke_width, mask=f'url(#{mask_id})')
                 )
 
-    def add_stars(self, starholder, mag_limit, min_radius=0.5, max_radius=5, scale_type=1, gradient=True, glow=False):
+    def add_stars(self, starholder, constellationship, mag_limit, min_radius=0.5, max_radius=5, scale_type=1, gradient=True, glow=False):
+        constellation_stars = constellationship.get_unique_stars()
         for star in starholder.stars:
             if self.is_north:
-                if star.dec < 90 - self.dec_degrees or star.mag > mag_limit:
+                if star.dec < 90 - self.dec_degrees or (star.mag > mag_limit and star not in constellation_stars):
                     continue
             else:
-                if star.dec > -90 + self.dec_degrees or star.mag > mag_limit:
+                if star.dec > -90 + self.dec_degrees or (star.mag > mag_limit and star not in constellation_stars):
                     continue
             x, y = self.get_hemisphere_cartesian(star.ra, star.dec)
             star_radius = self.mag_to_radius(star.mag, min_radius=min_radius, max_radius=max_radius, scale_type=scale_type, max_mag=mag_limit, min_mag=-1.46)
@@ -503,6 +492,8 @@ class SVGHemisphere:
             self.elements[star.hip] = self.drawing.add(self.drawing.circle(center=(x, y), r=star_radius, fill=fill))
 
     def add_text_centered_rotated(self, text, style, ra, dec, rotation):
+        if self.is_north and dec < 90 - self.dec_degrees or not self.is_north and dec > -90 + self.dec_degrees:
+            return
         x, y = self.get_hemisphere_cartesian(ra, dec)
         font = ImageFont.truetype(style['src'], style['font_size'])
         dummy_image = Image.new('RGB', (1, 1))
@@ -512,15 +503,32 @@ class SVGHemisphere:
         text_height = bbox[3] - bbox[1]
         centered_x = x - text_width / 2
         centered_y = y + text_height / 2
+        text_element_stroke = self.drawing.text(
+            text,
+            insert=(centered_x, centered_y),
+            font_family=style['font_family'],
+            font_size=style['font_size'],
+            font_weight=style['font_weight'],
+            font_style=style['font_style'],
+            letter_spacing=style['letter_spacing'],
+            transform=f'rotate({rotation}, {x}, {y})',
+            fill='none',
+            stroke=style['stroke'],
+            stroke_width=style['stroke_width']
+        )
         text_element = self.drawing.text(
             text,
             insert=(centered_x, centered_y),
             font_family=style['font_family'],
             font_size=style['font_size'],
-            font_weight=style.get('font_weight', 'normal'),
+            font_weight=style['font_weight'],
+            font_style=style['font_style'],
+            letter_spacing=style['letter_spacing'],
             transform=f'rotate({rotation}, {x}, {y})',
-            fill=style['fill']
+            fill=style['fill'],
+            stroke='none'
         )
+        self.elements[f'text_{text[0:10].replace(" ","")}_stroke'] = self.drawing.add(text_element_stroke)
         self.elements[f'text_{text[0:10].replace(" ","")}'] = self.drawing.add(text_element)
     
     def save_drawing(self):
