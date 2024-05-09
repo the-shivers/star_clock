@@ -107,7 +107,8 @@ if __name__ == '__main__':
     print("Labelling...")
     for key, value in constellation_coords_dict.items():
         for i, subkey in enumerate(key.split(' ')):
-            svg_north.add_text_centered_rotated(subkey.upper(), styles['constellation'], value['ra'], value['dec'] + i * 2, value['ra'] / 24 * 360 + value['rot'])
+            mult = 1 if is_north else -1
+            svg_north.add_text_centered_rotated(subkey.upper(), styles['constellation'], value['ra'], value['dec'] + i * 2, mult * value['ra'] / 24 * 360 + value['rot'])
     print("Milking...")
     for file in svg_files:
         svg_north.add_milky_way_svg(file, x_dim, y_dim, color=milky_way_color, opacity=milky_way_alpha)

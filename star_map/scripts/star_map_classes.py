@@ -8,8 +8,6 @@ import json
 import operator
 
 
-# Classes
-
 class Star:
     def __init__(self, hip, proper, ra, dec, mag, ci):
         self.hip = hip
@@ -152,6 +150,7 @@ class ConstellationParser:
             f"ConstellationParser(filepath={self.filepath!r}, starholder={self.starholder})"
         )
     
+
 class Constellationship:
     def __init__(self, constellations, name):
         self.constellations = constellations
@@ -185,6 +184,7 @@ class Constellationship:
         return (
             f'Constellationship "{self.name}" with {len(self.constellations)} constellations.'
         )
+
 
 class SVGHemisphere:
     def __init__(self, size, full_circle_dia, star_circle_dia, dec_degrees, filename="star_map.svg", is_north=True):
@@ -460,7 +460,6 @@ class SVGHemisphere:
                 points_list = [stars[0]] + [Star(0, '', coords[0], coords[1], 2, -0.5) for coords in converted] + [stars[1]]
                 self.make_smooth_path_d(points_list, stroke_color, stroke_width, mask_id)
         
-
     def add_constellation_lines_straight(self, constellationship, stroke_color='#FFFFFF', stroke_width=0.2, mask_id='star-masks'):
         for constellation in constellationship.constellations: # constellation = [(star, star), (star, star), ...]
             for stars in constellation.seg_list: # stars = (star, star)
@@ -539,6 +538,5 @@ class SVGHemisphere:
         self.elements[f'text_{text[0:10].replace(" ","")}_stroke'] = self.drawing.add(text_element_stroke)
         self.elements[f'text_{text[0:10].replace(" ","")}'] = self.drawing.add(text_element)
 
-    
     def save_drawing(self):
         self.drawing.save()
