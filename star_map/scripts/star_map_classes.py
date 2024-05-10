@@ -587,60 +587,223 @@ class SVGHemisphere:
             )
         )
 
-    def add_azimuthal_axes(self, n=8, stroke_color='#FFFFFF', stroke_width=1, ticks=True, tick_degs=10, tick_width=10, dec_rings=True):
+    # def add_azimuthal_axes(self, n=8, stroke_color='#FFFFFF', stroke_width=1, ticks=True, tick_degs=10, tick_width=10, dec_rings=True):
+    #     """Adds azimuthal axes. n is the number of slices we divide the pizza into."""
+    #     ticks = int((self.dec_degrees - 0.1) // tick_degs)
+    #     max_tick_distance = tick_degs * (ticks + 1) / self.dec_degrees * self.star_circle_dia / 2
+    #     tick_distances = [j / (ticks + 1) * max_tick_distance for j in range(1, ticks+1)]
+    #     if self.is_north:
+    #         labels = [f'{90 - int(tick_degs*(j+1))}°' for j in range(len(tick_distances))]
+    #     else:
+    #         labels = [f'{-90 + int(tick_degs*(j+1))}°' for j in range(len(tick_distances))]
+    #     tick_dict = dict(zip(labels, tick_distances))
+    #     for i in range(n):
+    #         unit_x = np.sin(2*i/n*np.pi)
+    #         unit_y = np.cos(2*i/n*np.pi)
+    #         self.elements[f'axis_{i}'] = self.drawing.add(
+    #             self.drawing.line(
+    #                 start=(self.size/2, self.size/2),
+    #                 end=(self.size/2+self.star_circle_dia/2*unit_x, self.size/2+self.star_circle_dia/2*unit_y),
+    #                 stroke_width=stroke_width,
+    #                 stroke=stroke_color
+    #             )
+    #         )
+    #         if ticks:
+    #             for key, value in tick_dict.items():
+    #                 start_x = self.size/2+value*unit_x
+    #                 start_y = self.size/2+value*unit_y
+    #                 x1 = start_x + unit_y * tick_width/2
+    #                 y1 = start_y - unit_x * tick_width/2
+    #                 x2 = start_x - unit_y * tick_width/2
+    #                 y2 = start_y + unit_x * tick_width/2
+    #                 self.elements[f'axis_{i}_tick_{key[:-1]}'] = self.drawing.add(
+    #                     self.drawing.line(
+    #                         start=(x1, y1),
+    #                         end=(x2, y2),
+    #                         stroke_width=stroke_width,
+    #                         stroke=stroke_color
+    #                     )
+    #                 )
+    #         if dec_rings:
+    #             for key, value in tick_dict.items():
+    #                 self.elements[f'dec_ring_{key[:-1]}'] = self.drawing.add(
+    #                     self.drawing.circle(
+    #                         center=(self.size/2, self.size/2), r=value, fill='none', stroke=stroke_color, stroke_width=stroke_width
+    #                     )
+    #                 )
+
+    def add_azimuthal_axes(self, style, n=8, stroke_color='#FFFFFF', stroke_width=1, tick_degs=10, tick_width=10):
         """Adds azimuthal axes. n is the number of slices we divide the pizza into."""
-        ticks = int((self.dec_degrees - 0.1) // tick_degs)
-        max_tick_distance = tick_degs * (ticks + 1) / self.dec_degrees * self.star_circle_dia / 2
-        tick_distances = [j / (ticks + 1) * max_tick_distance for j in range(1, ticks+1)]
-        if self.is_north:
-            labels = [f'{90 - int(tick_degs*(j+1))}°' for j in range(len(tick_distances))]
-        else:
-            labels = [f'{-90 + int(tick_degs*(j+1))}°' for j in range(len(tick_distances))]
-        tick_dict = dict(zip(labels, tick_distances))
+        assert 90 % tick_degs == 0
+        assert self.dec_degrees >= 91
+        # Above assertions guarantee we can do equator
+        n_ticks = 1 + int((self.dec_degrees - 0.1) // tick_degs) # Subtract 0.1 so that dec_degrees=90, tick_degs=10
+        dist_btwn_ticks = tick_degs / self.dec_degrees * self.star_circle_dia / 2
+        tick_dict = {}
+        scoot_factor = 0.0029 if self.is_north else -0.0029 # Slide labels directionally on RA axis
+        stretch_factor = 1.012 # stretch labels declinationally
+        for i in range(n_ticks):
+            degree = 90 - i * tick_degs if self.is_north else i * tick_degs - 90
+            radius = dist_btwn_ticks * i
+            tick_dict[str(degree)] = radius
+        # Plot polar and equatorial rings
+        polar_radius = tick_dict[str(90 - tick_degs)] if self.is_north else tick_dict[str(tick_degs - 90)]
+        self.elements['polar_ring'] = self.drawing.add(
+            self.drawing.circle(
+                center=(self.size/2, self.size/2), r=polar_radius, fill='none', stroke=stroke_color, stroke_width=stroke_width
+            )
+        )
+        self.elements['equator_ring'] = self.drawing.add(
+            self.drawing.circle(
+                center=(self.size/2, self.size/2), r=tick_dict['0'], fill='none', stroke=stroke_color, stroke_width=stroke_width
+            )
+        )
+        # Plot intra-polar compass spokes
+        self.elements[f'n_s_intrapolar_line'] = self.drawing.add(
+            self.drawing.line(
+                start=(self.size/2, self.size/2 - polar_radius),
+                end=(self.size/2, self.size/2 + polar_radius),
+                stroke_width=stroke_width,
+                stroke=stroke_color
+            )
+        )
+        self.elements[f'e_w_intrapolar_line'] = self.drawing.add(
+            self.drawing.line(
+                start=(self.size/2 - polar_radius, self.size/2),
+                end=(self.size/2 + polar_radius, self.size/2),
+                stroke_width=stroke_width,
+                stroke=stroke_color
+            )
+        )
+        # Plot extra-polar spokes and ticks
         for i in range(n):
             unit_x = np.sin(2*i/n*np.pi)
             unit_y = np.cos(2*i/n*np.pi)
+            
+            label_unit_x = np.sin(2*(i/n + scoot_factor)*np.pi) # Scoot these a bit!
+            label_unit_y = np.cos(2*(i/n + scoot_factor)*np.pi) # Scoot these a bit!
+            outer_radius = self.star_circle_dia / 2
             self.elements[f'axis_{i}'] = self.drawing.add(
                 self.drawing.line(
-                    start=(self.size/2, self.size/2),
-                    end=(self.size/2+self.star_circle_dia/2*unit_x, self.size/2+self.star_circle_dia/2*unit_y),
+                    start=(self.size/2 + unit_x * polar_radius, self.size/2 + unit_y * polar_radius),
+                    end=(self.size/2 + unit_x * outer_radius, self.size/2 + unit_y * outer_radius),
                     stroke_width=stroke_width,
                     stroke=stroke_color
                 )
             )
-            if ticks:
-                for key, value in tick_dict.items():
-                    start_x = self.size/2+value*unit_x
-                    start_y = self.size/2+value*unit_y
-                    x1 = start_x + unit_y * tick_width/2
-                    y1 = start_y - unit_x * tick_width/2
-                    x2 = start_x - unit_y * tick_width/2
-                    y2 = start_y + unit_x * tick_width/2
-                    self.elements[f'axis_{i}_tick_{key[:-1]}'] = self.drawing.add(
-                        self.drawing.line(
-                            start=(x1, y1),
-                            end=(x2, y2),
-                            stroke_width=stroke_width,
-                            stroke=stroke_color
-                        )
-                    )
-            if dec_rings:
-                for key, value in tick_dict.items():
-                    self.elements[f'dec_ring_{key[:-1]}'] = self.drawing.add(
-                        self.drawing.circle(
-                            center=(self.size/2, self.size/2), r=value, fill='none', stroke=stroke_color, stroke_width=stroke_width
-                        )
-                    )
-
-    def add_equator(self, stroke_color='#FFFFFF', stroke_width=0.2):
-        if self.dec_degrees < 90:
-            return
-        radius = 90 / self.dec_degrees * self.star_circle_dia / 2
-        self.elements['equator'] = self.drawing.add(
-            self.drawing.circle(
-                center=(self.size/2, self.size/2), r=radius, fill='none', stroke=stroke_color, stroke_width=stroke_width
+            # RA labels
+            if self.is_north:
+                label_x, label_y = self.size/2 + label_unit_x * tick_dict['0'] * stretch_factor, self.size/2 - label_unit_y * tick_dict['0'] * stretch_factor
+            else:
+                label_x, label_y = self.size/2 - label_unit_x * tick_dict['0'] * stretch_factor, self.size/2 - label_unit_y * tick_dict['0'] * stretch_factor
+            font = ImageFont.truetype(style['src'], style['font_size'])
+            dummy_image = Image.new('RGB', (1, 1))
+            draw = ImageDraw.Draw(dummy_image)
+            # Get width, correct for additional letter spacing
+            text_width = 0
+            if isinstance(style['letter_spacing'], int):
+                for char in '{i}h':
+                    bbox = draw.textbbox((0, 0), char, font=font)
+                    char_width = bbox[2] - bbox[0]
+                    text_width += char_width + style['letter_spacing']
+            text_width -= style['letter_spacing']  # Remove extra spacing added at the end
+            # Now we can get height
+            bbox = draw.textbbox((0, 0), '{i}h', font=font)
+            text_height = bbox[3] - bbox[1]
+            centered_x = label_x - text_width / 2
+            centered_y = label_y + (text_height / 2) * 0.8 # Fudge factor cuz I'm bad at coding
+            rotation = i/n * 360 if self.is_north else -i/n * 360
+            text_element = self.drawing.text(
+                f'{i}h',
+                insert=(centered_x, centered_y),
+                font_family=style['font_family'],
+                font_size=style['font_size'],
+                font_weight=style['font_weight'],
+                font_style=style['font_style'],
+                letter_spacing=style['letter_spacing'],
+                transform=f'rotate({rotation}, {label_x}, {label_y})',
+                fill=style['fill'],
+                stroke='none'
             )
-        )
+            self.elements[f'ra_{n}h_label'] = self.drawing.add(text_element)
+        # Ticks
+        for i in range(n):
+            unit_x = np.sin(2*i/n*np.pi)
+            unit_y = np.cos(2*i/n*np.pi)
+            for key, value in tick_dict.items():
+                if abs(int(key)) == 90 or abs(int(key)) == 90 - tick_degs or int(key) == 0:
+                    continue # skip for pole and ring about pole
+                start_x = self.size/2+value*unit_x
+                start_y = self.size/2+value*unit_y
+                x1 = start_x + unit_y * tick_width/2
+                y1 = start_y - unit_x * tick_width/2
+                x2 = start_x - unit_y * tick_width/2
+                y2 = start_y + unit_x * tick_width/2
+                self.elements[f'axis_{i}_tick_{key[:-1]}'] = self.drawing.add(
+                    self.drawing.line(
+                        start=(x1, y1),
+                        end=(x2, y2),
+                        stroke_width=stroke_width,
+                        stroke=stroke_color
+                    )
+                )
+        # DEC labels
+        for i in range(n):
+            for key, value in tick_dict.items():
+                if abs(int(key)) == 90 or abs(int(key)) == 90 - tick_degs or int(key) == 0:
+                    continue # skip for pole and ring about pole
+                if (24 - i) % 6 != 0:
+                    continue # Only do multiples of 6 i.e. compass directions
+                label_unit_x = np.sin(2*(i/n)*np.pi)
+                label_unit_y = np.cos(2*(i/n)*np.pi)
+                if self.is_north:
+                    label_x, label_y = self.size/2 + label_unit_x * tick_dict[key], self.size/2 - label_unit_y * tick_dict[key]
+                else:
+                    label_x, label_y = self.size/2 - label_unit_x * tick_dict[key], self.size/2 - label_unit_y * tick_dict[key]
+                font = ImageFont.truetype(style['src'], style['font_size'])
+                dummy_image = Image.new('RGB', (1, 1))
+                draw = ImageDraw.Draw(dummy_image)
+                # Get width, correct for additional letter spacing
+                text_width = 0
+                if isinstance(style['letter_spacing'], int):
+                    for char in f'{key}°':
+                        bbox = draw.textbbox((0, 0), char, font=font)
+                        char_width = bbox[2] - bbox[0]
+                        text_width += char_width + style['letter_spacing']
+                text_width -= style['letter_spacing']  # Remove extra spacing added at the end
+                # Now we can get height
+                bbox = draw.textbbox((0, 0), '{key}°', font=font)
+                text_height = bbox[3] - bbox[1]
+                centered_x = label_x - (text_width / 2)
+                centered_y = label_y + (text_height / 2) * 0.8
+                # Now these labels are perfectly centered. Slide them over based on their axes so they dn't overlap. 
+                if centered_x > self.size/2 * 0.9 and centered_x < self.size/2 * 1.1 and centered_y < self.size/2:
+                    # This means we're on the NORTH axis, so adjust labels LEFT
+                    centered_x -= (4 * text_width / 5)
+                if centered_x > self.size/2 * 0.9 and centered_x < self.size/2 * 1.1 and centered_y > self.size/2:
+                    # This means we're on the SOUTH axis, so adjust labels RIGHT
+                    centered_x -= (4 * text_width / 5)
+                if centered_y > self.size/2 * 0.9 and centered_y < self.size/2 * 1.1 and centered_x > self.size/2:
+                    # This means we're on the EAST axis, so adjust labels UP... which we somehow do by modifying x
+                    centered_x -= (4 * text_height / 3)
+                if centered_y > self.size/2 * 0.9 and centered_y < self.size/2 * 1.1 and centered_x < self.size/2:
+                    # This means we're on the WEST axis, so adjust labels DOWN... which we somehow do by modifying x
+                    centered_x -= (4 * text_height / 3)
+                rotation = i/n * 360 if self.is_north else -i/n * 360
+                text_element = self.drawing.text(
+                    f'{key}°',
+                    insert=(centered_x, centered_y),
+                    font_family=style['font_family'],
+                    font_size=style['font_size'],
+                    font_weight=style['font_weight'],
+                    font_style=style['font_style'],
+                    letter_spacing=style['letter_spacing'],
+                    transform=f'rotate({rotation}, {label_x}, {label_y})',
+                    fill=style['fill'],
+                    stroke='none'
+                )
+                self.elements[f'dec_{key}°_label'] = self.drawing.add(text_element)
+                
 
     def add_milky_way_svg(self, source_svg, x_dim, y_dim, color='#FFFFFF', opacity=0.1, mask_id='starfield-mask'):
         paths_data = self.extract_and_structure_paths(source_svg)

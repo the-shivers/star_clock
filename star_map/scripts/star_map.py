@@ -15,7 +15,7 @@ sky_culture = 'snt'
 star_data_loc = f'{dir}/star_map/data/stars/athyg_24_reduced_m10.csv'
 constellations_json = f'{dir}/star_map/data/sky_cultures/{sky_culture}/constellationship.json'
 const_coords_loc = f'{dir}/star_map/data/sky_cultures/{sky_culture}/constellation_coords.csv'
-is_north = False
+is_north = True
 mag_limit = 5.5 # For limiting size of stars list.
 min_radius = 0.5
 max_radius = 10
@@ -49,11 +49,11 @@ min_tick = 6
 sev_tick = 50
 
 axes_col = '#3C6893'
-axes_n = 8
+axes_n = 24
 axes_stroke_width = 1
 axes_ticks = True
 axes_tick_degs = 10
-axes_tick_width = 8
+axes_tick_width = 6
 
 milky_way_color = '#FFFFFF'
 milky_way_alpha = 0.08
@@ -95,6 +95,15 @@ styles = {
         'letter_spacing': 7, # 'normal', 5, 3
         'fill': '#86C2FF',
         'src': f'{dir}/star_map/fonts/JosefinSans-Medium.ttf',
+    },
+    'ra_dec_lab': {
+        'font_family': 'Josefin Sans',
+        'font_size': 10,
+        'font_weight': 300, # Light
+        'font_style': 'normal', # 'normal', 'italic
+        'letter_spacing': 1, # 'normal', 5, 3
+        'fill': '#3C6893',
+        'src': f'{dir}/star_map/fonts/JosefinSans-Light.ttf',
     }
 }
 
@@ -115,12 +124,10 @@ if __name__ == '__main__':
     svg_north.add_date_circle(fill=date_circle_col, stroke=date_circle_stroke)
     svg_north.add_dates_and_tickmarks(style=styles['small'], tick_color=tick_col, stroke_width=stroke_width, maj_tick=maj_tick, min_tick=min_tick)
     svg_north.add_star_circle(fill=star_circle_col, stroke=star_circle_stroke)
-    svg_north.add_azimuthal_axes(n=axes_n, stroke_color=axes_col, stroke_width=axes_stroke_width, ticks=axes_ticks, tick_degs=axes_tick_degs, tick_width=axes_tick_width, dec_rings=False)
-    svg_north.add_equator(stroke_color=equator_col, stroke_width=equator_stroke_width)
+    svg_north.add_azimuthal_axes(style=styles['ra_dec_lab'], n=axes_n, stroke_color=axes_col, stroke_width=axes_stroke_width, tick_degs=axes_tick_degs, tick_width=axes_tick_width)
     svg_north.add_months(styles['month'])
     
     print("Adding constellation lines...")
-    # svg_north.add_constellation_lines_straight(constellationship, stroke_width=constellation_stroke_width, stroke_color=constellation_lines_col)
     svg_north.add_constellation_lines_curved(constellationship, stroke_width=constellation_stroke_width, stroke_color=constellation_lines_col)
     print("Adding stars...")
     svg_north.add_stars(starholder, constellationship, mag_limit=mag_limit, min_radius=min_radius, max_radius=max_radius, scale_type=scale_type, gradient=gradient, mask_id = 'starfield-mask')
@@ -131,21 +138,26 @@ if __name__ == '__main__':
     for key, value in constellation_coords_dict.items():
         for i, subkey in enumerate(key.split(' ')):
             mult = 1 if is_north else -1
-            svg_north.add_text_centered_rotated(subkey.upper(), styles['constellation'], value['ra'], value['dec'] + i * 2, mult * value['ra'] / 24 * 360 + value['rot'])
+            svg_north.add_text_centered_rotated(subkey.upper(), styles['constellation'], value['ra'], value['dec'] + i * 2 * mult, mult * value['ra'] / 24 * 360 + value['rot'])
     print("Milking...")
     for file in svg_files:
         svg_north.add_milky_way_svg(file, x_dim, y_dim, color=milky_way_color, opacity=milky_way_alpha)
     print(f"Saving file! {output_loc}")
     svg_north.save_drawing()
 
+# Core goals
+# TODO: DSO symbols and labels
+# TODO: Star labels
+# TODO: Adjust label positions
+# TODO: ecliptic maybe?
 
+
+# Optioanl goals
+# TODO: Figure out why constellation parsing is so damn slow, possibly pickle them.
 # TODO: Fix radial gradient performance. We can just do classes for these and assign them more reasonably than having 10000. Especially relevant when we get to glow if we want to add it.
 # TODO: Stars: Gradient should be a parameter. Should probably be defined with a dict up front or list or something.
 # TODO: Stars: Glow.
 # TODO: Maybe glowing lines.
-
-# TODO: Start labeling! And add DSOs which aer now clean lol.
-# TODO: Axes, labels, dates, elliptic, equator, RA/DEC
-# 
+# TODO: Color scheme updates, config dicts, palettes
 
 
