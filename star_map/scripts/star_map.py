@@ -15,7 +15,7 @@ sky_culture = 'snt'
 star_data_loc = f'{dir}/star_map/data/stars/athyg_24_reduced_m10.csv'
 constellations_json = f'{dir}/star_map/data/sky_cultures/{sky_culture}/constellationship.json'
 const_coords_loc = f'{dir}/star_map/data/sky_cultures/{sky_culture}/constellation_coords.csv'
-is_north = True
+is_north = False
 mag_limit = 5.5 # For limiting size of stars list.
 min_radius = 0.5
 max_radius = 10
@@ -117,19 +117,16 @@ if __name__ == '__main__':
     svg_north.add_star_circle(fill=star_circle_col, stroke=star_circle_stroke)
     svg_north.add_azimuthal_axes(n=axes_n, stroke_color=axes_col, stroke_width=axes_stroke_width, ticks=axes_ticks, tick_degs=axes_tick_degs, tick_width=axes_tick_width, dec_rings=False)
     svg_north.add_equator(stroke_color=equator_col, stroke_width=equator_stroke_width)
-    # svg_north.add_circumfral_text('NORTH', (1000,1000), 870, 0)
-    # svg_north.add_circumfral_text('EAST', (1000,1000), 870, 3.14/2)
-    # svg_north.add_circumfral_text('SOUTH', (1000,1000), 870, 3.14)
-    # svg_north.add_circumfral_text('WEST', (1000,1000), 870, 3*3.14/2)
     svg_north.add_months(styles['month'])
     
     print("Adding constellation lines...")
     # svg_north.add_constellation_lines_straight(constellationship, stroke_width=constellation_stroke_width, stroke_color=constellation_lines_col)
     svg_north.add_constellation_lines_curved(constellationship, stroke_width=constellation_stroke_width, stroke_color=constellation_lines_col)
     print("Adding stars...")
-    svg_north.add_stars(starholder, constellationship, mag_limit=mag_limit, min_radius=min_radius, max_radius=max_radius, scale_type=scale_type, gradient=gradient)
+    svg_north.add_stars(starholder, constellationship, mag_limit=mag_limit, min_radius=min_radius, max_radius=max_radius, scale_type=scale_type, gradient=gradient, mask_id = 'starfield-mask')
     print("Masking...")
-    svg_north.add_star_mask(constellationship, truncation_rate=constellation_trunc_rate, mask_id='star-masks')
+    svg_north.add_segment_mask(constellationship, truncation_rate=constellation_trunc_rate, mask_id='segment-masks')
+    svg_north.add_star_and_mw_mask(mask_id='starfield-mask')
     print("Labelling...")
     for key, value in constellation_coords_dict.items():
         for i, subkey in enumerate(key.split(' ')):

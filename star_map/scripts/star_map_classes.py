@@ -228,6 +228,13 @@ class SVGHemisphere:
                 average_angle -= 2 * np.pi
             month_angles[month] = average_angle
             previous_angle = last_angle % (2 * np.pi)
+        if self.is_north:
+            return date_dict, month_angles
+        # Reverse angles for southern hemisphere (dumb but it works)
+        for date_str, info in date_dict.items():
+            date_dict[date_str] = {'month': info['month'], 'day': info['day'], 'angle': 2 * np.pi - info['angle'], 'tick_type': info['tick_type']}
+        for month_str, angle in month_angles.items():
+            month_angles[month_str] = 2 * np.pi - month_angles[month_str]
         return date_dict, month_angles
 
     def get_hemisphere_cartesian(self, ra, dec):
@@ -281,7 +288,7 @@ class SVGHemisphere:
             ra += 24
         return ra, dec
 
-    def make_smooth_path_d(self, points, stroke_color, stroke_width, mask_id='star-masks'):
+    def make_smooth_path_d(self, points, stroke_color, stroke_width, mask_id='segment-masks'):
         n = len(points)
         if n < 2:
             return ""
@@ -356,7 +363,7 @@ class SVGHemisphere:
         radius = min_radius + (max_radius - min_radius) * scaled_magnitude
         return radius
     
-    def add_star_mask(self, constellationship, truncation_rate=2, mask_id = 'star-masks'):
+    def add_segment_mask(self, constellationship, truncation_rate=2, mask_id = 'segment-masks'):
         # Note: must be performed AFTER stars have been added to the drawing.
         self.elements[mask_id] = self.drawing.defs.add(self.drawing.mask(id=mask_id, maskUnits="userSpaceOnUse"))
         self.elements[mask_id].add(self.drawing.circle((self.size/2, self.size/2), r=self.star_circle_dia/2, fill="white"))
@@ -367,6 +374,11 @@ class SVGHemisphere:
                 y = self.elements[star.hip].attribs['cy']
                 star_radius = self.elements[star.hip].attribs['r']
                 self.elements[mask_id].add(self.drawing.circle(center=(x, y), r=star_radius + truncation_rate, fill="black"))
+
+    def add_star_and_mw_mask(self, mask_id = 'starfield-mask'):
+        self.elements[mask_id] = self.drawing.defs.add(self.drawing.mask(id=mask_id, maskUnits="userSpaceOnUse"))
+        self.elements[mask_id].add(self.drawing.circle((self.size/2, self.size/2), r=self.star_circle_dia/2, fill="white"))
+
     
     # Other helper functions
     def extract_and_structure_paths(self, svg_file):
@@ -458,7 +470,9 @@ class SVGHemisphere:
         for date_str, info in self.date_dict.items():
             tick_size = maj_tick if info['tick_type'] == 'major' else min_tick
             tick_size = (self.full_circle_dia - self.star_circle_dia)/2 if info['tick_type'] == 'severe' else tick_size
-            start_x, start_y = self.get_hemisphere_cartesian(info['angle'] * 24 / np.pi / 2, 90 - self.dec_degrees)
+            ra = info['angle'] * 24 / np.pi / 2 if self.is_north else 24 - info['angle'] * 24 / np.pi / 2
+            dec = 90 - self.dec_degrees if self.is_north else self.dec_degrees - 90
+            start_x, start_y = self.get_hemisphere_cartesian(ra, dec)
             end_x = start_x + np.sin(info['angle']) * tick_size
             end_y = start_y - np.cos(info['angle']) * tick_size
             tick = self.drawing.line(
@@ -628,7 +642,7 @@ class SVGHemisphere:
             )
         )
 
-    def add_milky_way_svg(self, source_svg, x_dim, y_dim, color='#FFFFFF', opacity=0.1):
+    def add_milky_way_svg(self, source_svg, x_dim, y_dim, color='#FFFFFF', opacity=0.1, mask_id='starfield-mask'):
         paths_data = self.extract_and_structure_paths(source_svg)
         transformed_data = self.transform_paths(paths_data, x_dim, y_dim)
         combined_path_string = ""
@@ -644,11 +658,12 @@ class SVGHemisphere:
                 fill_opacity=opacity, 
                 stroke="none", 
                 stroke_width=0, 
-                fill_rule="evenodd"
+                fill_rule="evenodd",
+                mask=f'url(#{mask_id})'
             )
         )
 
-    def add_constellation_lines_curved(self, constellationship, stroke_color='#FFFFFF', stroke_width=0.2, mask_id='star-masks'):
+    def add_constellation_lines_curved(self, constellationship, stroke_color='#FFFFFF', stroke_width=0.2, mask_id='segment-masks'):
         for constellation in constellationship.constellations: # constellation = [(star, star), (star, star), ...]
             for stars in constellation.seg_list: # stars = (star, star)
                 start = self.get_hemisphere_cartesian(stars[0].ra, stars[0].dec)
@@ -660,7 +675,7 @@ class SVGHemisphere:
                 points_list = [stars[0]] + [Star(0, '', coords[0], coords[1], 2, -0.5) for coords in converted] + [stars[1]]
                 self.make_smooth_path_d(points_list, stroke_color, stroke_width, mask_id)
         
-    def add_constellation_lines_straight(self, constellationship, stroke_color='#FFFFFF', stroke_width=0.2, mask_id='star-masks'):
+    def add_constellation_lines_straight(self, constellationship, stroke_color='#FFFFFF', stroke_width=0.2, mask_id='segment-masks'):
         for constellation in constellationship.constellations: # constellation = [(star, star), (star, star), ...]
             for stars in constellation.seg_list: # stars = (star, star)
                 start = self.get_hemisphere_cartesian(stars[0].ra, stars[0].dec)
@@ -672,7 +687,7 @@ class SVGHemisphere:
                         start, end, stroke=stroke_color, stroke_width=stroke_width, mask=f'url(#{mask_id})')
                 )
 
-    def add_stars(self, starholder, constellationship, mag_limit, min_radius=0.5, max_radius=5, scale_type=1, gradient=True, glow=False):
+    def add_stars(self, starholder, constellationship, mag_limit, min_radius=0.5, max_radius=5, scale_type=1, gradient=True, glow=False, mask_id = 'starfield-mask'):
         constellation_stars = constellationship.get_unique_stars()
         for star in starholder.stars:
             if self.is_north:
@@ -688,7 +703,7 @@ class SVGHemisphere:
                 fill = f'url(#{star.hip})'
             else:
                 fill = self.bv_to_color(star.ci)
-            self.elements[star.hip] = self.drawing.add(self.drawing.circle(center=(x, y), r=star_radius, fill=fill))
+            self.elements[star.hip] = self.drawing.add(self.drawing.circle(center=(x, y), r=star_radius, fill=fill, mask=f'url(#{mask_id})'))
 
     def save_drawing(self):
         self.drawing.save()
