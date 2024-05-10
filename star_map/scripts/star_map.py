@@ -24,7 +24,7 @@ gradient = False # Gradient effect on stars
 
 # SVG configuration
 size = 2000 # This is the size of the ENTIRE ILLUSTRATION. 
-full_circle_dia = 1800 # The circle containing the starscape AND months, tickmarks.
+full_circle_dia = 1780 # The circle containing the starscape AND months, tickmarks.
 star_circle_dia = 1600 # This is the circle containing our stars
 dec_degrees = 108 # Number of degrees of declination to map. 90 would be one celestial hemisphere. 180 is both hemispheres, but it gets hella distorted!
 hemisphere_code = 'n' if is_north else 's'
@@ -37,9 +37,16 @@ y_dim = 4498
 
 # Color palette and fonts styles
 star_circle_col = '#1E3A56'
+star_circle_stroke = '#FFFFFF'
 
-date_circle_col = '#000000'
-date_col = '#0000FF'
+date_circle_col = '#100F20'
+date_circle_stroke = 'none'
+
+tick_col = '#ffffff'
+stroke_width = 1
+maj_tick = 15
+min_tick = 6
+sev_tick = 50
 
 axes_col = '#3C6893'
 axes_n = 8
@@ -62,7 +69,7 @@ styles = {
     'constellation': {
         'font_family': 'Josefin Sans',
         'font_size': 12,
-        'font_weight': 300, # Regular
+        'font_weight': 300, # Light
         'font_style': 'normal', # 'normal', 'italic
         'letter_spacing': 5, # 'normal', 5, 3
         'fill': '#86C2FF',
@@ -79,6 +86,15 @@ styles = {
         'font_style': 'normal',
         'fill': '#FFFFFF',
         'src': f'{dir}/star_map/fonts/JosefinSans-Light.ttf'
+    },
+    'month': {
+        'font_family': 'Josefin Sans',
+        'font_size': 20,
+        'font_weight': 500, # Medium
+        'font_style': 'normal', # 'normal', 'italic
+        'letter_spacing': 7, # 'normal', 5, 3
+        'fill': '#86C2FF',
+        'src': f'{dir}/star_map/fonts/JosefinSans-Medium.ttf',
     }
 }
 
@@ -96,11 +112,16 @@ if __name__ == '__main__':
     
     print("Building SVG...")
     svg_north = SVGHemisphere(size, full_circle_dia, star_circle_dia, dec_degrees, filename=output_loc, is_north=is_north)
-    svg_north.add_date_circle(fill=date_circle_col, stroke=date_col)
-    svg_north.add_dates(style = styles['small'])
-    svg_north.add_star_circle(fill=star_circle_col)
+    svg_north.add_date_circle(fill=date_circle_col, stroke=date_circle_stroke)
+    svg_north.add_dates_and_tickmarks(style=styles['small'], tick_color=tick_col, stroke_width=stroke_width, maj_tick=maj_tick, min_tick=min_tick)
+    svg_north.add_star_circle(fill=star_circle_col, stroke=star_circle_stroke)
     svg_north.add_azimuthal_axes(n=axes_n, stroke_color=axes_col, stroke_width=axes_stroke_width, ticks=axes_ticks, tick_degs=axes_tick_degs, tick_width=axes_tick_width, dec_rings=False)
     svg_north.add_equator(stroke_color=equator_col, stroke_width=equator_stroke_width)
+    # svg_north.add_circumfral_text('NORTH', (1000,1000), 870, 0)
+    # svg_north.add_circumfral_text('EAST', (1000,1000), 870, 3.14/2)
+    # svg_north.add_circumfral_text('SOUTH', (1000,1000), 870, 3.14)
+    # svg_north.add_circumfral_text('WEST', (1000,1000), 870, 3*3.14/2)
+    svg_north.add_months(styles['month'])
     
     print("Adding constellation lines...")
     # svg_north.add_constellation_lines_straight(constellationship, stroke_width=constellation_stroke_width, stroke_color=constellation_lines_col)

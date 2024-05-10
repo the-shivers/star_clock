@@ -454,10 +454,10 @@ class SVGHemisphere:
             )
         )
 
-    def add_dates(self, style, color='#0000ff', stroke_width = 1, maj_tick = 15, min_tick = 6, sev_tick = 50):
+    def add_dates_and_tickmarks(self, style, tick_color='#0000ff', stroke_width = 1, maj_tick = 15, min_tick = 6):
         for date_str, info in self.date_dict.items():
             tick_size = maj_tick if info['tick_type'] == 'major' else min_tick
-            tick_size = sev_tick if info['tick_type'] == 'severe' else tick_size
+            tick_size = (self.full_circle_dia - self.star_circle_dia)/2 if info['tick_type'] == 'severe' else tick_size
             start_x, start_y = self.get_hemisphere_cartesian(info['angle'] * 24 / np.pi / 2, 90 - self.dec_degrees)
             end_x = start_x + np.sin(info['angle']) * tick_size
             end_y = start_y - np.cos(info['angle']) * tick_size
@@ -465,7 +465,7 @@ class SVGHemisphere:
                 start=(start_x, start_y),
                 end=(end_x, end_y),
                 stroke_width=stroke_width,
-                stroke=color
+                stroke=tick_color
             )
             self.elements[f'{date_str}_tick'] = self.drawing.add(tick)
             # Label
@@ -505,7 +505,65 @@ class SVGHemisphere:
             )
             self.elements[f'{date_str}_label'] = self.drawing.add(text_element)
 
-    def add_star_circle(self, fill="#112233", stroke="black"):
+    def add_circumfral_text(self, text, center, radius, theta, style):
+        # We anticipate theta = 0 being 12 o'cock, but in SVG convention, it's 3 o'clock. Let's adjust:
+        theta = theta - np.pi/2
+        x_center, y_center = center
+        path_data = []
+        # Calculate the total length of the text
+        # text_length = len(text) * 20  # Approximation, adjust as needed
+        # arc_length = text_length / (2 * np.pi * radius) * 2 * np.pi
+        font = ImageFont.truetype(style['src'], style['font_size'])
+        dummy_image = Image.new('RGB', (1, 1))
+        draw = ImageDraw.Draw(dummy_image)
+        # Get width, correct for additional letter spacing
+        text_width = 0
+        if isinstance(style['letter_spacing'], int):
+            for char in text:
+                bbox = draw.textbbox((0, 0), char, font=font)
+                char_width = bbox[2] - bbox[0]
+                text_width += char_width + style['letter_spacing']
+        text_width -= style['letter_spacing']  # Remove extra spacing added at the end
+        arc_length = text_width / (2 * np.pi * radius) * 2 * np.pi
+        # Calculate the start and end angles
+        start_angle = theta + arc_length / 2
+        end_angle = theta - arc_length / 2
+        # Handle edge case where angles cross 12 o'clock
+        if start_angle > 2 * np.pi:
+            start_angle -= 2 * np.pi
+        if end_angle < 0:
+            end_angle += 2 * np.pi
+        # Convert angles to coordinates
+        start_x = x_center + radius * np.cos(start_angle)
+        start_y = y_center + radius * np.sin(start_angle)
+        end_x = x_center + radius * np.cos(end_angle)
+        end_y = y_center + radius * np.sin(end_angle)
+        # Define the path using an arc
+        path_data = f"M{start_x},{start_y} A{radius},{radius} 0 0,0 {end_x},{end_y}"
+        # Create the path element
+        path_id = f"textPath_{text}"
+        path = self.drawing.path(d=path_data, fill="none", stroke="none", id=path_id)
+        self.drawing.add(path)
+        # Add the text element following the path
+        text_path = self.drawing.textPath(
+            f"#{path_id}", 
+            text, 
+            fill=style['fill'],
+            font_family=style['font_family'],
+            font_size=style['font_size'],
+            font_weight=style['font_weight'],
+            font_style=style['font_style'],
+            letter_spacing=style['letter_spacing'],
+        )
+        text_element = self.drawing.text('', insert=(0, 0))
+        text_element.add(text_path)
+        self.drawing.add(text_element)
+
+    def add_months(self, style):
+        for month, angle in self.month_dict.items():
+            self.add_circumfral_text(month.upper(), (self.size/2, self.size/2), 870, angle, style)
+
+    def add_star_circle(self, fill="#112233", stroke="white"):
         self.elements['star_circle'] = self.drawing.add(
             self.drawing.circle(
                 center=(self.size / 2, self.size / 2),
