@@ -15,7 +15,7 @@ sky_culture = 'snt'
 star_data_loc = f'{dir}/star_map/data/stars/athyg_24_reduced_m10.csv'
 constellations_json = f'{dir}/star_map/data/sky_cultures/{sky_culture}/constellationship.json'
 const_coords_loc = f'{dir}/star_map/data/sky_cultures/{sky_culture}/constellation_coords.csv'
-is_north = False
+is_north = True
 mag_limit = 5.5 # For limiting size of stars list.
 min_radius = 0.5
 max_radius = 10
@@ -37,6 +37,9 @@ y_dim = 4498
 
 # Color palette and fonts styles
 star_circle_col = '#1E3A56'
+
+date_circle_col = '#000000'
+date_col = '#0000FF'
 
 axes_col = '#3C6893'
 axes_n = 8
@@ -72,7 +75,7 @@ styles = {
         'font_size': 14,
         'font_weight': 300, # Light
         'font_style': 'normal',
-        'letter_spacing': 'normal',
+        'letter_spacing': 1,
         'font_style': 'normal',
         'fill': '#FFFFFF',
         'src': f'{dir}/star_map/fonts/JosefinSans-Light.ttf'
@@ -93,6 +96,8 @@ if __name__ == '__main__':
     
     print("Building SVG...")
     svg_north = SVGHemisphere(size, full_circle_dia, star_circle_dia, dec_degrees, filename=output_loc, is_north=is_north)
+    svg_north.add_date_circle(fill=date_circle_col, stroke=date_col)
+    svg_north.add_dates(style = styles['small'])
     svg_north.add_star_circle(fill=star_circle_col)
     svg_north.add_azimuthal_axes(n=axes_n, stroke_color=axes_col, stroke_width=axes_stroke_width, ticks=axes_ticks, tick_degs=axes_tick_degs, tick_width=axes_tick_width, dec_rings=False)
     svg_north.add_equator(stroke_color=equator_col, stroke_width=equator_stroke_width)
@@ -112,7 +117,7 @@ if __name__ == '__main__':
     print("Milking...")
     for file in svg_files:
         svg_north.add_milky_way_svg(file, x_dim, y_dim, color=milky_way_color, opacity=milky_way_alpha)
-    print("Saving file!")
+    print(f"Saving file! {output_loc}")
     svg_north.save_drawing()
 
 

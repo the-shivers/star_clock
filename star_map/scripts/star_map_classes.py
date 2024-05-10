@@ -194,9 +194,42 @@ class SVGHemisphere:
         self.dec_degrees = dec_degrees
         self.is_north = is_north
         self.drawing = svgwrite.Drawing(filename=filename, size=(f"{size}px", f"{size}px"))
+        self.date_dict, self.month_dict = self.get_date_info()
         self.elements = {}
 
     # SVG-specific geometry helper functions
+    def get_date_info(self):
+        month_dict = {
+            'March': 31, 'April': 30, 'May': 31, 'June': 30, 'July': 31,
+            'August': 31, 'September': 30, 'October': 31, 'November': 30,
+            'December': 31, 'January': 31, 'February': 28
+        }
+        start = 21
+        days = 365
+        current_day = 1
+        date_dict = {}
+        month_angles = {}
+        for month, month_days in month_dict.items():
+            for day in range(month_days):
+                angle = (current_day - start) / days * np.pi * 2
+                angle = angle + (2 * np.pi) if angle < 0 else angle
+                tick_type = 'major' if (day + 1) % 5 == 0 else 'minor'
+                tick_type = 'severe' if (day + 1) == month_days else tick_type
+                date_dict[f'{month}-{day + 1}'] = {'month': month, 'day': day + 1, 'angle': angle, 'tick_type': tick_type}
+                current_day += 1
+        previous_angle = date_dict[f'February-28']['angle']
+        for month, month_days in month_dict.items():
+            last_date_key = f'{month}-{month_days}'
+            last_angle = date_dict[last_date_key]['angle']
+            if last_angle < previous_angle:
+                last_angle += 2 * np.pi
+            average_angle = (previous_angle + last_angle) / 2
+            if average_angle > 2 * np.pi:
+                average_angle -= 2 * np.pi
+            month_angles[month] = average_angle
+            previous_angle = last_angle % (2 * np.pi)
+        return date_dict, month_angles
+
     def get_hemisphere_cartesian(self, ra, dec):
         """Given RA and DEC of some stellar object, produces cartesian coordinates for the azimuthal equidistant projection."""
         if self.is_north:
@@ -205,7 +238,7 @@ class SVGHemisphere:
         else:
             theta_radians = 2 * np.pi - (ra / 24 * np.pi * 2)
             hypotenuse = ((90 + dec) / self.dec_degrees) * self.star_circle_dia/2
-        x = self.size / 2 + np.sin(theta_radians) * hypotenuse
+        x = self.size/2 + np.sin(theta_radians) * hypotenuse
         y = self.size/2 - np.cos(theta_radians) * hypotenuse
         return (x, y)
     
@@ -363,6 +396,115 @@ class SVGHemisphere:
         return all_paths
 
     # Drawing Functions
+    def add_text_centered_rotated(self, text, style, ra, dec, rotation):
+        if self.is_north and dec < 90 - self.dec_degrees or not self.is_north and dec > -90 + self.dec_degrees:
+            return
+        x, y = self.get_hemisphere_cartesian(ra, dec)
+        font = ImageFont.truetype(style['src'], style['font_size'])
+        dummy_image = Image.new('RGB', (1, 1))
+        draw = ImageDraw.Draw(dummy_image)
+        # Get width, correct for additional letter spacing
+        text_width = 0
+        if isinstance(style['letter_spacing'], int):
+            for char in text:
+                bbox = draw.textbbox((0, 0), char, font=font)
+                char_width = bbox[2] - bbox[0]
+                text_width += char_width + style['letter_spacing']
+        text_width -= style['letter_spacing']  # Remove extra spacing added at the end
+        # Now we can get height
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_height = bbox[3] - bbox[1]
+        centered_x = x - text_width / 2
+        centered_y = y + text_height / 2
+        text_element_stroke = self.drawing.text(
+            text,
+            insert=(centered_x, centered_y),
+            font_family=style['font_family'],
+            font_size=style['font_size'],
+            font_weight=style['font_weight'],
+            font_style=style['font_style'],
+            letter_spacing=style['letter_spacing'],
+            transform=f'rotate({rotation}, {x}, {y})',
+            fill='none',
+            stroke=style['stroke'],
+            stroke_width=style['stroke_width']
+        )
+        text_element = self.drawing.text(
+            text,
+            insert=(centered_x, centered_y),
+            font_family=style['font_family'],
+            font_size=style['font_size'],
+            font_weight=style['font_weight'],
+            font_style=style['font_style'],
+            letter_spacing=style['letter_spacing'],
+            transform=f'rotate({rotation}, {x}, {y})',
+            fill=style['fill'],
+            stroke='none'
+        )
+        self.elements[f'text_{text[0:10].replace(" ","")}_stroke'] = self.drawing.add(text_element_stroke)
+        self.elements[f'text_{text[0:10].replace(" ","")}'] = self.drawing.add(text_element)
+
+    def add_date_circle(self, fill="#ff0000", stroke="#0000ff"):
+        self.elements['star_circle'] = self.drawing.add(
+            self.drawing.circle(
+                center=(self.size / 2, self.size / 2),
+                r=self.full_circle_dia / 2,
+                fill=fill,
+                stroke=stroke
+            )
+        )
+
+    def add_dates(self, style, color='#0000ff', stroke_width = 1, maj_tick = 15, min_tick = 6, sev_tick = 50):
+        for date_str, info in self.date_dict.items():
+            tick_size = maj_tick if info['tick_type'] == 'major' else min_tick
+            tick_size = sev_tick if info['tick_type'] == 'severe' else tick_size
+            start_x, start_y = self.get_hemisphere_cartesian(info['angle'] * 24 / np.pi / 2, 90 - self.dec_degrees)
+            end_x = start_x + np.sin(info['angle']) * tick_size
+            end_y = start_y - np.cos(info['angle']) * tick_size
+            tick = self.drawing.line(
+                start=(start_x, start_y),
+                end=(end_x, end_y),
+                stroke_width=stroke_width,
+                stroke=color
+            )
+            self.elements[f'{date_str}_tick'] = self.drawing.add(tick)
+            # Label
+            if info['tick_type'] != 'major':
+                continue
+            text_x = start_x + np.sin(info['angle']) * (maj_tick * 2)
+            text_y = start_y - np.cos(info['angle']) * (maj_tick * 2)
+            # Size Font
+            font = ImageFont.truetype(style['src'], style['font_size'])
+            dummy_image = Image.new('RGB', (1, 1))
+            draw = ImageDraw.Draw(dummy_image)
+            # Get width, correct for additional letter spacing
+            text_width = 0
+            if isinstance(style['letter_spacing'], int):
+                for char in str(info['day']):
+                    bbox = draw.textbbox((0, 0), char, font=font)
+                    char_width = bbox[2] - bbox[0]
+                    text_width += char_width + style['letter_spacing']
+            text_width -= style['letter_spacing']  # Remove extra spacing added at the end
+            # Now we can get height
+            bbox = draw.textbbox((0, 0), str(info['day']), font=font)
+            text_height = bbox[3] - bbox[1]
+            centered_x = text_x - text_width / 2
+            centered_y = text_y + (text_height / 2) * 0.8 # Fudge factor cuz I'm bad at coding
+            rotation = 180 + info['angle'] * 360 / 2 / np.pi
+            text_element = self.drawing.text(
+                str(info['day']),
+                insert=(centered_x, centered_y),
+                font_family=style['font_family'],
+                font_size=style['font_size'],
+                font_weight=style['font_weight'],
+                font_style=style['font_style'],
+                letter_spacing=style['letter_spacing'],
+                transform=f'rotate({rotation}, {text_x}, {text_y})',
+                fill=style['fill'],
+                stroke='none'
+            )
+            self.elements[f'{date_str}_label'] = self.drawing.add(text_element)
+
     def add_star_circle(self, fill="#112233", stroke="black"):
         self.elements['star_circle'] = self.drawing.add(
             self.drawing.circle(
@@ -489,54 +631,6 @@ class SVGHemisphere:
             else:
                 fill = self.bv_to_color(star.ci)
             self.elements[star.hip] = self.drawing.add(self.drawing.circle(center=(x, y), r=star_radius, fill=fill))
-
-    def add_text_centered_rotated(self, text, style, ra, dec, rotation):
-        if self.is_north and dec < 90 - self.dec_degrees or not self.is_north and dec > -90 + self.dec_degrees:
-            return
-        x, y = self.get_hemisphere_cartesian(ra, dec)
-        font = ImageFont.truetype(style['src'], style['font_size'])
-        dummy_image = Image.new('RGB', (1, 1))
-        draw = ImageDraw.Draw(dummy_image)
-        # Get width, correct for additional letter spacing
-        text_width = 0
-        if isinstance(style['letter_spacing'], int):
-            for char in text:
-                bbox = draw.textbbox((0, 0), char, font=font)
-                char_width = bbox[2] - bbox[0]
-                text_width += char_width + style['letter_spacing']
-        text_width -= style['letter_spacing']  # Remove extra spacing added at the end
-        # Now we can get height
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_height = bbox[3] - bbox[1]
-        centered_x = x - text_width / 2
-        centered_y = y + text_height / 2
-        text_element_stroke = self.drawing.text(
-            text,
-            insert=(centered_x, centered_y),
-            font_family=style['font_family'],
-            font_size=style['font_size'],
-            font_weight=style['font_weight'],
-            font_style=style['font_style'],
-            letter_spacing=style['letter_spacing'],
-            transform=f'rotate({rotation}, {x}, {y})',
-            fill='none',
-            stroke=style['stroke'],
-            stroke_width=style['stroke_width']
-        )
-        text_element = self.drawing.text(
-            text,
-            insert=(centered_x, centered_y),
-            font_family=style['font_family'],
-            font_size=style['font_size'],
-            font_weight=style['font_weight'],
-            font_style=style['font_style'],
-            letter_spacing=style['letter_spacing'],
-            transform=f'rotate({rotation}, {x}, {y})',
-            fill=style['fill'],
-            stroke='none'
-        )
-        self.elements[f'text_{text[0:10].replace(" ","")}_stroke'] = self.drawing.add(text_element_stroke)
-        self.elements[f'text_{text[0:10].replace(" ","")}'] = self.drawing.add(text_element)
 
     def save_drawing(self):
         self.drawing.save()
